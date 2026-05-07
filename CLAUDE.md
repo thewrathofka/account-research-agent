@@ -28,27 +28,52 @@ so research output is interchangeable.
 
 ---
 
-## Current state (Track 1 — Python)
+## Current state (Track 1 — Python, v0.1.0 = end of Phase 1)
 
-**File:** single-file MVP in `account_research_agent.py`. ~640 lines, 9 sections.
+**Structure:** package layout under `~/code/account-research-agent/`. The file
+`account_research_agent.py` is now a ~110-line CLI entry point; everything
+substantial lives in sibling modules (`config.py`, `crm.py`, `run_log.py`,
+`orchestrator.py`, `providers/`, `tools/`, `tasks/`, `prompts/`, `evals/`,
+`tests/`). See `README.md` §Architecture for the file map.
 
-**What works:**
-- Notion CRM read with Rep + Priority + `since` filter.
-- Notion CRM write: properties + free-form blocks appended to page body.
-- ReAct agent loop with Tavily web search.
-- SQLite run log (`runs.db`) — one row per (account, task, run).
-- Concurrent processing of accounts (default 5 in flight).
-- Dry-run mode (no Notion writes).
-- Confidence aggregation, status derivation (done / needs_review / failed / out_of_scope-pending).
-- Anthropic SDK retries set to 8 for 529 resilience.
+**Phase 1 modules shipped (all v1.0.0):**
+- `module_01_gate` — Size + EU/NA gate (halts pipeline on fail)
+- `module_03_revenue_model` — revenue model + customers + products
+- `module_05_corporate_structure` — standalone/subsidiary/parent + PE
+- `module_06_structural_news` — last-6mo events with constrained vocab
+- `module_07_trigger_events` — funding / rebrand / agency switch / AI initiatives
+- `module_09_creative_reality` — JD pain phrases + named agencies
+- `module_12_competitor_snapshot` — top 3 direct competitors
+- `module_13_industry_pulse` — last-60d category stories
+- `module_14_hiring_signal` — hiring/downsizing via jobspy + Tavily
 
-**What's tested:**
-- ✅ Oracle live run wrote both properties and page blocks correctly.
-- ❌ Batch of 7 hit Anthropic 529 storm — failed gracefully, no Notion writes.
+**Provider abstraction:** Anthropic + OpenAI both fully implemented; Gemini
+stubbed. Swap is one line via `PROVIDER` env var or `--provider` flag.
 
-**What's still placeholder:**
-- The single task (`CompanyOverview`) uses a generic prompt and outputs an
-  ad-hoc shape. To be replaced by the per-module tasks below.
+**Eval system:** `python -m evals.runner --task module_NN [--all]`. Five
+metrics (E1–E5: schema / coverage / calibration / sources / cost). Three
+golden cases seeded (Stripe, Oracle, Razorpay). Module 1 baseline run was
+3/3 PASS at 100% schema/calibration/sources, 94% field coverage.
+
+**Tests:** 24 pytest cases covering provider abstraction, prompt loading,
+gate logic, section assembly, and metrics scoring.
+
+**Outstanding:**
+- 5+ more golden cases need hand-annotation (plan §7.2: 7 Priority-A
+  accounts + 1 negative).
+- OpenAI swap proof-of-concept run (needs `OPENAI_API_KEY`).
+- Phase 2 modules: 4 (pain-point synthesis), 10 (ad libraries — Apify).
+- Phase 3 hardening: per-task resume, scheduled monthly cron, Gemini impl.
+
+---
+
+## Old state (kept for reference — v0.0)
+
+The original v0.0 was a single-file MVP (~640 lines) with one placeholder task
+(`CompanyOverview`) and direct Anthropic SDK calls. Verified live on Oracle
+(2026-05-06). Hit a 529 storm on batch run; failed gracefully (no Notion writes).
+Refactored into the v0.1.0 package layout. `_legacy.py` files preserve the
+v0.0 behaviour for offline replay.
 
 ---
 
