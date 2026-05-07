@@ -67,6 +67,11 @@ class WebSearchTool:
 
     def __call__(self, query: str) -> str:
         self._count += 1
+        # Tavily rejects queries over ~400 chars with HTTP 400. The model occasionally
+        # constructs an over-long query (especially in module_09 where it stitches
+        # together job titles). Truncate at 350 to leave headroom.
+        if len(query) > 350:
+            query = query[:347] + "..."
         args = {"query": query}
         # Cache lookup first — same query within 24h returns instantly, no API call.
         cached = self.cache.lookup(self.name, args)

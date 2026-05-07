@@ -256,14 +256,30 @@ class Orchestrator:
 
 
 def _aggregate_confidence(results: list[TaskResult]) -> str:
-    if not results:
+    """Confidence excluding failed tasks. If a single non-critical task fails, it
+    shouldn't drag the whole account's confidence to 'failed' — the other tasks
+    succeeded. We aggregate only over non-failed results; failed tasks lower
+    status to 'needs_review' (see _derive_status) without polluting confidence."""
+    successful = [r for r in results if r.confidence != "failed"]
+    if not successful:
         return "failed"
-    worst_rank = max(_CONF_RANK[r.confidence] for r in results)
+    worst_rank = max(_CONF_RANK[r.confidence] for r in successful)
     return next(name for name, rank in _CONF_RANK.items() if rank == worst_rank)
 
 
 def _derive_status(results: list[TaskResult], overall_conf: str) -> str:
-    if not results or all(r.error for r in results):
+    """Status policy:
+      - failed: NO usable data — gate failed OR all tasks errored
+      - needs_review: some tasks errored OR overall confidence is low
+      - done: every task succeeded at high/medium confidence
+
+    Partial failure write-policy: as long as at least one non-gate task succeeded,
+    we WRITE what we have to Notion with status=needs_review. Better to ship 8/9
+    successful task outputs than fail-close on a single brittle module.
+    """
+    if not results:
+        return "failed"
+    if all(r.error for r in results):
         return "failed"
     if overall_conf == "failed":
         return "failed"
