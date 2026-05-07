@@ -199,16 +199,47 @@ class Task:
 
 def _extract_json(text: str) -> dict[str, Any] | None:
     """Pull a JSON object out of a ```json fenced block, falling back to the first
-    parseable {...} substring if no fence is found."""
+    parseable {...} substring if no fence is found.
+
+    Includes a tolerant repair pass for common provider quirks observed in evals:
+      - gpt-4.1 sometimes writes numeric ranges (e.g. `1000-5000`) as values where
+        an integer is expected. Repair: replace `<number>-<number>` value with null.
+      - Trailing commas before `]` or `}`.
+    Real fix lives in v1.1.0 prompts (explicit "no ranges" instruction).
+    """
     fenced = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    candidates: list[str] = []
     if fenced:
-        try:
-            return json.loads(fenced.group(1))
-        except json.JSONDecodeError:
-            return None
+        candidates.append(fenced.group(1))
     for match in re.finditer(r"\{.*?\}", text, re.DOTALL):
-        try:
-            return json.loads(match.group(0))
-        except json.JSONDecodeError:
-            continue
+        candidates.append(match.group(0))
+
+    for candidate in candidates:
+        for parser in (_strict_json, _repaired_json):
+            result = parser(candidate)
+            if result is not None:
+                return result
     return None
+
+
+def _strict_json(s: str) -> dict[str, Any] | None:
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return None
+
+
+def _repaired_json(s: str) -> dict[str, Any] | None:
+    """Attempt to repair common provider JSON quirks. Returns the parsed dict
+    or None if repair didn't help."""
+    repaired = s
+    # Replace numeric ranges in value position with null. Matches `: 1000-5000`
+    # but NOT `: "1000-5000"` (the latter is a valid string value).
+    repaired = re.sub(r':\s*-?\d+(?:\.\d+)?\s*-\s*-?\d+(?:\.\d+)?(?=\s*[,}])',
+                       ': null', repaired)
+    # Strip trailing commas before } or ]
+    repaired = re.sub(r',\s*([}\]])', r'\1', repaired)
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        return None

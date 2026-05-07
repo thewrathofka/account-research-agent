@@ -1,19 +1,18 @@
 {
   "company_name": "Razorpay",
   "size_band": "2000-5000",
-  "employee_count_estimate": 4000,
+  "employee_count_estimate": 2200,
   "operates_in_eu": false,
   "operates_in_na": false,
   "operates_in_eu_or_na": false,
-  "evidence_eu": null,
-  "evidence_na": null,
-  "reason_if_out_of_scope": "Indian fintech company with headquarters in Bengaluru, India and expansion only to Southeast Asia (Singapore, Malaysia, Indonesia) with no physical offices in EU or North America per multiple sources.",
+  "evidence_eu": "No evidence of offices or hiring activity in Europe found; all physical offices confirmed in India.",
+  "evidence_na": "No evidence of North American offices or hiring posts; only mention is of supporting US businesses online with Indian-based staff.",
   "sources": [
     "https://craft.co/razorpay/locations",
     "https://razorpay.com/about/",
-    "https://in.linkedin.com/company/razorpay",
-    "https://www.trueup.io/co/razorpay",
-    "https://www.ambitionbox.com/overview/razorpay-overview"
+    "https://coinlaw.io/how-many-people-work-at-razorpay/",
+    "https://timesofindia.indiatimes.com/business/india-business/razorpay-completes-reverse-flip-to-india-moves-global-hq-from-us/articleshow/121494161.cms"
   ],
-  "confidence": "high"
+  "confidence": "high",
+  "reason_if_out_of_scope": "Indian fintech with no offices or physical operations in EU or North America per company website and third-party sources."
 }

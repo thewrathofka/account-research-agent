@@ -5,14 +5,13 @@
   "operates_in_eu": true,
   "operates_in_na": true,
   "operates_in_eu_or_na": true,
-  "evidence_eu": "Dual headquarters in Dublin, Ireland confirmed by LinkedIn and Stripe newsroom. Additional EU offices in London and Paris per Stripe newsroom.",
-  "evidence_na": "Dual headquarters in South San Francisco (354 Oyster Point Blvd) confirmed by multiple sources. Additional NA office in Chicago, IL (515 N State St) per Exa directory.",
+  "evidence_eu": "Dual headquarters in Dublin, Ireland, and additional offices in London and Paris per stripe.com/newsroom/information and exa.ai.",
+  "evidence_na": "Dual headquarters in South San Francisco, CA, and regional offices in Chicago, Atlanta, New York, and Seattle per exa.ai and Glassdoor.",
   "sources": [
-    "https://www.linkedin.com/company/stripe",
     "https://stripe.com/newsroom/information",
-    "https://www.unifygtm.com/insights-headcount/stripe",
-    "https://craft.co/stripe/locations",
-    "https://exa.ai/websets/directory/stripe-offices"
+    "https://exa.ai/websets/directory/stripe-offices",
+    "https://www.linkedin.com/company/stripe",
+    "https://www.unifygtm.com/insights-headcount/stripe"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null

@@ -5,14 +5,13 @@
   "operates_in_eu": true,
   "operates_in_na": true,
   "operates_in_eu_or_na": true,
-  "evidence_eu": "EMEA headquarters in Reading, England (Thames Valley Park). Multiple EU offices confirmed including Germany (Frankfurt), Spain (Madrid), France, Italy, Poland (Warsaw), Hungary (Budapest), and offices across UK, Ireland, Austria, Belgium, Denmark, Finland, Greece, Netherlands, Norway, Portugal, Sweden, Switzerland per oracle.com official contact pages",
-  "evidence_na": "Global headquarters in Austin, Texas (2300 Cloud Way). Extensive North American presence with offices across multiple US states including California (Redwood Shores, Santa Clara, Irvine), Illinois, Florida, Massachusetts, New York, Colorado, Oregon, Pennsylvania, Virginia, and Canadian operations per oracle.com/corporate/contact/field-offices",
+  "evidence_eu": "Oracle has physical offices and EMEA headquarters in Reading, England and further offices in France, Germany, Italy, Ireland, and more per official Oracle contacts page.",
+  "evidence_na": "Oracle HQ is in Austin, Texas, and a move to Nashville, Tennessee was announced; also multiple field offices exist across the United States.",
   "sources": [
-    "https://stockanalysis.com/stocks/orcl/employees/",
-    "https://www.oracle.com/uk/corporate/contact/field-offices/",
-    "https://www.oracle.com/corporate/contact/field-offices/",
-    "https://sprouts.ai/blog/oracle-headquarters-office-locations",
-    "https://www.oracle.com/corporate/contact/global.html"
+    "https://www.oracle.com/corporate/contact/global.html",
+    "https://www.clay.com/dossier/oracle-headquarters-office-locations",
+    "https://tradingeconomics.com/orcl:us:employees",
+    "https://stockanalysis.com/stocks/orcl/employees/"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null
