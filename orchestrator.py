@@ -258,24 +258,106 @@ def _derive_status(results: list[TaskResult], overall_conf: str) -> str:
     return "done"
 
 
-def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
-    """Assemble page-body blocks. Section-aware refactor lands in step 9 of Phase 1.
+# Top-level page-body section order. Tasks declare which section they write to.
+_SECTION_ORDER = [
+    "Overview",
+    "Possible Pain Points",
+    "News",
+    "Creative Posture",
+    "Competitor Landscape",
+]
 
-    For now this preserves the v0.0 shape: one heading per task. Step 9 will replace
-    this with section-grouped assembly in the prescribed order.
+# Sub-section ordering inside each top-level section. Tasks set `subsection`.
+# A None subsection means "main body of this section, before any subsections."
+_SUBSECTION_ORDER: dict[str, list[str | None]] = {
+    "Overview": [None, "Headcount"],
+    "Possible Pain Points": [None],
+    "News": [None],
+    "Creative Posture": [None, "Ads Running"],
+    "Competitor Landscape": [None],
+}
+
+
+def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
+    """Assemble page-body blocks in the prescribed section order.
+
+    Each task contributes its page_blocks to (section, subsection). The orchestrator
+    groups by section, then renders top-level heading_2 + optional heading_3 sub-
+    sections, in the fixed order from _SECTION_ORDER.
+
+    Tasks targeting an unknown section land in a fallback "Other" section at the end.
     """
     today = date.today().isoformat()
     blocks: list[dict[str, Any]] = [crm_module.heading_2(f"Research — {today}")]
+
+    # Group: (section, subsection) -> list[TaskResult]
+    grouped: dict[tuple[str, str | None], list[TaskResult]] = {}
+    other: list[TaskResult] = []
     for r in results:
-        blocks.append(crm_module.heading_3(r.task_name))
-        if r.error:
-            blocks.append(crm_module.paragraph(f"Failed: {r.error}"))
+        if r.section in _SECTION_ORDER:
+            key = (r.section, r.subsection)
+            grouped.setdefault(key, []).append(r)
+        else:
+            other.append(r)
+
+    # Collect sources across all tasks (deduped, ordered by first appearance).
+    all_sources: list[str] = []
+    seen_sources: set[str] = set()
+    for r in results:
+        for url in r.sources:
+            if url and url not in seen_sources:
+                all_sources.append(url)
+                seen_sources.add(url)
+
+    # Emit each top-level section in fixed order, with its subsections.
+    for section in _SECTION_ORDER:
+        section_results = [
+            r for r in results
+            if r.section == section and r.error is None
+        ]
+        section_errors = [
+            r for r in results
+            if r.section == section and r.error is not None
+        ]
+        if not section_results and not section_errors:
             continue
-        blocks.extend(r.page_blocks)
-        if r.sources:
-            blocks.append(crm_module.paragraph("Sources:"))
-            for url in r.sources:
-                blocks.append(crm_module.bullet(url))
+
+        blocks.append(crm_module.heading_3(section))
+
+        # First the None-subsection content (the main body of this section).
+        for r in grouped.get((section, None), []):
+            blocks.extend(r.page_blocks or [])
+
+        # Then each declared subsection, in order.
+        for sub in _SUBSECTION_ORDER.get(section, [None]):
+            if sub is None:
+                continue
+            sub_results = grouped.get((section, sub), [])
+            if not sub_results:
+                continue
+            blocks.append(crm_module.heading_3(f"{section} — {sub}"))
+            for r in sub_results:
+                blocks.extend(r.page_blocks or [])
+
+        # Emit error notes for any failed tasks in this section.
+        for r in section_errors:
+            blocks.append(crm_module.paragraph(f"⚠ {r.task_name} failed: {r.error}"))
+
+    # Tasks with unknown sections land at the end so we never silently drop them.
+    if other:
+        blocks.append(crm_module.heading_3("Other"))
+        for r in other:
+            if r.error:
+                blocks.append(crm_module.paragraph(f"⚠ {r.task_name} failed: {r.error}"))
+                continue
+            blocks.extend(r.page_blocks or [])
+
+    # Single deduped sources block at the very end.
+    if all_sources:
+        blocks.append(crm_module.heading_3("Sources"))
+        for url in all_sources:
+            blocks.append(crm_module.bullet(url))
+
     blocks.append(crm_module.divider())
     return blocks
 
