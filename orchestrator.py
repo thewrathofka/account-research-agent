@@ -95,12 +95,20 @@ class Orchestrator:
     ) -> AccountOutcome:
         results: list[TaskResult] = []
         gate_failed = False
+        # Context envelope: maps prior task_name → its output dict. Each subsequent
+        # task receives this and can read facts that earlier tasks already gathered
+        # (saves search iterations on overlapping data — modules 5 + 14 use this).
+        context: dict[str, Any] = {}
 
         for task in tasks:
             log.info("[%s] %s — running…", account.name, task.name)
-            result = task.run(account.name, provider=self.provider)
+            result = task.run(account.name, provider=self.provider, context=context)
             results.append(result)
             self._record_run(account, result, dry_run)
+
+            # Add this task's output to the envelope for downstream tasks.
+            if result.output is not None:
+                context[task.name] = result.output
 
             # Gate enforcement: if a gate task ran and its gate_passes() is False,
             # skip ALL downstream tasks for this account.
@@ -186,12 +194,15 @@ class Orchestrator:
         )
 
     def _record_run(self, account: Account, result: TaskResult, dry_run: bool) -> None:
+        # Resolve model_tier from the task class for run-log accounting.
+        task_cls = TASK_REGISTRY.get(result.task_name)
+        model_tier = getattr(task_cls, "model_tier", "smart") if task_cls else "smart"
         self.run_log.record(RunRecord(
             account_page_id=account.page_id, account_name=account.name,
             task_name=result.task_name,
             started_at=iso_now(), completed_at=iso_now(),
             status="failed" if result.error else ("dry_run" if dry_run else "success"),
-            confidence=result.confidence, model=self.provider.model,
+            confidence=result.confidence, model=result.model_used or self.provider.model,
             input_tokens=result.input_tokens, output_tokens=result.output_tokens,
             search_count=result.search_count, duration_seconds=result.duration_seconds,
             error=result.error,
@@ -200,6 +211,9 @@ class Orchestrator:
             prompt_version=result.prompt_version,
             provider=self.provider.name,
             git_sha=self.git_sha,
+            cached_input_tokens=result.cached_input_tokens,
+            model_tier=model_tier,
+            model_used=result.model_used,
         ))
 
     def _write_to_notion(

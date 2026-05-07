@@ -16,6 +16,7 @@ class Module12CompetitorSnapshot(Task):
     section = "Competitor Landscape"
     subsection = None
     prompt_module = prompt
+    model_tier = "fast"  # competitor lookup is straightforward; Haiku/mini handles fine
 
     def build_tools(self) -> list[Tool]:
         return [WebSearchTool()]

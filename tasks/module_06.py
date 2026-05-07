@@ -16,6 +16,7 @@ class Module06StructuralNews(Task):
     section = "News"
     subsection = None
     prompt_module = prompt
+    model_tier = "fast"  # news lookup; Haiku/mini handles fine
 
     def build_tools(self) -> list[Tool]:
         return [WebSearchTool()]

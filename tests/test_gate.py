@@ -55,14 +55,15 @@ class ScriptedProvider:
         self.responses = self.responses or {}
         self.call_log = []
 
-    def run_loop(self, system_prompt, user_message, tools, max_iterations=10, tool_call_cap=None):
+    def run_loop(self, system_prompt, user_message, tools, max_iterations=10,
+                 tool_call_cap=None, model_tier="smart", cache_system_prompt=True):
         # Fingerprint: which task is calling us, based on first-line of system_prompt
         first_line = system_prompt.splitlines()[0] if system_prompt else ""
         self.call_log.append(first_line[:80])
         text = self.responses.get(first_line[:80], '```json\n{"confidence":"high","sources":[]}\n```')
         return ProviderResult(
             text=text, tool_calls_made=0, input_tokens=10, output_tokens=10,
-            iterations=1, stop_reason="end_turn",
+            iterations=1, stop_reason="end_turn", model_used=self.model,
         )
 
 

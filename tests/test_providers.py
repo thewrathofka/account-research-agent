@@ -46,6 +46,7 @@ class FakeProvider:
 
     def run_loop(
         self, system_prompt, user_message, tools, max_iterations=10, tool_call_cap=None,
+        model_tier="smart", cache_system_prompt=True,
     ) -> ProviderResult:
         return ProviderResult(
             text=self.canned_text,
@@ -54,6 +55,7 @@ class FakeProvider:
             output_tokens=self.canned_output_tokens,
             iterations=1,
             stop_reason="end_turn",
+            model_used=self.model,
         )
 
 
@@ -104,6 +106,7 @@ def test_task_handles_provider_error():
             return ProviderResult(
                 text="", tool_calls_made=0, input_tokens=0, output_tokens=0,
                 iterations=0, stop_reason="error", error="simulated failure",
+                model_used=self.model,
             )
 
     task = CompanyOverview()

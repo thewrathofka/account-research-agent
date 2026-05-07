@@ -14,9 +14,11 @@ from tools.base import Tool
 
 class GeminiProvider(LLMProvider):
     name = "gemini"
+    models = config.GEMINI_MODELS
+    supports_caching = False  # Gemini has explicit context caching but we haven't wired it
 
-    def __init__(self, model: str | None = None):
-        self.model = model or config.GEMINI_MODEL
+    def __init__(self):
+        self.model = self.models["smart"]
 
     def run_loop(
         self,
@@ -25,6 +27,8 @@ class GeminiProvider(LLMProvider):
         tools: list[Tool],
         max_iterations: int = 10,
         tool_call_cap: int | None = None,
+        model_tier: str = "smart",
+        cache_system_prompt: bool = True,
     ) -> ProviderResult:
         raise NotImplementedError(
             "GeminiProvider is a stub. To implement: install `google-genai`, "

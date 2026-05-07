@@ -41,10 +41,27 @@ def _validate_keys() -> None:
 # Valid values: "anthropic" | "openai" | "gemini" (gemini stub-only as of v0.1.0)
 PROVIDER_NAME = os.getenv("PROVIDER", "anthropic")
 
-# ---- Models per provider ----
-ANTHROPIC_MODEL = "claude-sonnet-4-5"
-OPENAI_MODEL = "gpt-4.1"
-GEMINI_MODEL = "gemini-2.5-pro"
+# ---- Models per provider, by tier ----
+# Each task can declare a `model_tier` ("smart" default, "fast" for cheap lookups).
+# Provider adapters map tier → provider-specific model. Falls back to "smart" if a
+# tier is unknown.
+ANTHROPIC_MODELS = {
+    "smart": "claude-sonnet-4-5",
+    "fast": "claude-haiku-4-5",
+}
+OPENAI_MODELS = {
+    "smart": "gpt-4.1",
+    "fast": "gpt-4.1-mini",
+}
+GEMINI_MODELS = {
+    "smart": "gemini-2.5-pro",
+    "fast": "gemini-2.5-flash",
+}
+
+# Backwards-compat single-model constants (used by some legacy log paths)
+ANTHROPIC_MODEL = ANTHROPIC_MODELS["smart"]
+OPENAI_MODEL = OPENAI_MODELS["smart"]
+GEMINI_MODEL = GEMINI_MODELS["smart"]
 
 # ---- Generation params ----
 MAX_TOKENS = 4096

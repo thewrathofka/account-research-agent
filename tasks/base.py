@@ -42,6 +42,8 @@ class TaskResult:
     duration_seconds: float
     prompt_version: str
     provider_name: str
+    cached_input_tokens: int = 0        # tokens served from prompt cache
+    model_used: str | None = None        # provider-specific model ("claude-haiku-4-5" etc.)
     error: str | None = None
 
 
@@ -52,6 +54,8 @@ class Task:
     section: str = "Overview"
     subsection: str | None = None
     prompt_module: ModuleType | None = None  # set in subclass: `import prompts.module_NN as ...`
+    model_tier: str = "smart"   # "smart" (default Sonnet/gpt-4.1) | "fast" (Haiku/mini)
+    cache_system_prompt: bool = True   # toggle caching per-task if needed
 
     def build_tools(self) -> list[Tool]:
         """Return fresh Tool instances for this run (per-task call counters)."""
@@ -63,9 +67,17 @@ class Task:
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         return []
 
+    def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
+        """Default: just ask the model to research the company. Subclasses override
+        to inject prior-task context, which lets the agent skip redundant searches."""
+        return f"Research the company: {account_name}"
+
     # ---- run loop ----
 
-    def run(self, account_name: str, provider: LLMProvider) -> TaskResult:
+    def run(
+        self, account_name: str, provider: LLMProvider,
+        context: dict[str, Any] | None = None,
+    ) -> TaskResult:
         if self.prompt_module is None:
             raise RuntimeError(f"Task {self.name!r} has no prompt_module set.")
 
@@ -73,11 +85,18 @@ class Task:
         prompt_version = getattr(self.prompt_module, "VERSION", "unknown")
         tools = self.build_tools()
 
+        # Build the user message. If `context` contains relevant prior task outputs
+        # this task can use, the subclass overrides build_user_message() to inject
+        # them (saves search iterations).
+        user_message = self.build_user_message(account_name, context or {})
+
         start = time.time()
         result = provider.run_loop(
             system_prompt=system_prompt,
-            user_message=f"Research the company: {account_name}",
+            user_message=user_message,
             tools=tools,
+            model_tier=self.model_tier,
+            cache_system_prompt=self.cache_system_prompt,
         )
         duration = time.time() - start
 
@@ -90,6 +109,8 @@ class Task:
                 input_tokens=result.input_tokens, output_tokens=result.output_tokens,
                 duration_seconds=duration,
                 prompt_version=prompt_version, provider_name=provider.name,
+                cached_input_tokens=result.cached_input_tokens,
+                model_used=result.model_used,
                 error=result.error or f"stop_reason: {result.stop_reason}",
             )
 
@@ -103,6 +124,8 @@ class Task:
                 input_tokens=result.input_tokens, output_tokens=result.output_tokens,
                 duration_seconds=duration,
                 prompt_version=prompt_version, provider_name=provider.name,
+                cached_input_tokens=result.cached_input_tokens,
+                model_used=result.model_used,
                 error=f"end_turn without JSON block:\n{result.text[:500]}",
             )
 
@@ -119,6 +142,8 @@ class Task:
             input_tokens=result.input_tokens, output_tokens=result.output_tokens,
             duration_seconds=duration,
             prompt_version=prompt_version, provider_name=provider.name,
+            cached_input_tokens=result.cached_input_tokens,
+            model_used=result.model_used,
         )
 
 

@@ -21,6 +21,7 @@ class Module13IndustryPulse(Task):
     section = "Competitor Landscape"
     subsection = None
     prompt_module = prompt
+    model_tier = "fast"  # news headlines lookup; Haiku/mini handles fine
 
     def build_tools(self) -> list[Tool]:
         return [WebSearchTool()]
