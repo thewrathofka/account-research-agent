@@ -1,0 +1,27 @@
+{
+  "company_name": "Stripe, Inc.",
+  "notes": "Sanity case — large public-facing fintech, well-indexed. Should pass module 01 gate at high confidence with both EU + NA presence.",
+  "module_01_gate": {
+    "expected": {
+      "size_band": "5000+",
+      "operates_in_eu": true,
+      "operates_in_na": true,
+      "operates_in_eu_or_na": true,
+      "confidence": "high"
+    }
+  },
+  "module_03_revenue_model": {
+    "expected": {
+      "revenue_model": "Transaction",
+      "primary_customer_segment": "businesses",
+      "confidence": "high"
+    }
+  },
+  "module_05_corporate_structure": {
+    "expected": {
+      "structure_type": "standalone",
+      "is_pe_owned": false,
+      "confidence": "high"
+    }
+  }
+}

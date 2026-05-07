@@ -1,0 +1,28 @@
+{
+  "company_name": "Oracle",
+  "notes": "Verified live 2026-05-06. Parent company with many subs (NetSuite, Cerner). 162k employees. Caught Mar 2026 layoff of 30k → buying-frozen.",
+  "module_01_gate": {
+    "expected": {
+      "size_band": "5000+",
+      "operates_in_eu": true,
+      "operates_in_na": true,
+      "operates_in_eu_or_na": true,
+      "confidence": "high"
+    }
+  },
+  "module_05_corporate_structure": {
+    "expected": {
+      "structure_type": "parent",
+      "is_pe_owned": false,
+      "notable_sister_or_child_brands": ["NetSuite"],
+      "confidence": "high"
+    }
+  },
+  "module_06_structural_news": {
+    "expected": {
+      "structure_note": "mass layoffs",
+      "buying_implication": "buying-frozen",
+      "confidence": "high"
+    }
+  }
+}

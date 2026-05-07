@@ -1,0 +1,19 @@
+{
+  "company_name": "Oracle Corporation",
+  "size_band": "5000+",
+  "employee_count_estimate": 162000,
+  "operates_in_eu": true,
+  "operates_in_na": true,
+  "operates_in_eu_or_na": true,
+  "evidence_eu": "EMEA headquarters in Reading, England (Thames Valley Park campus); EU offices in Germany (Frankfurt), Spain (Madrid), France, Italy, Poland (Warsaw), Hungary (Budapest), and multiple other EU countries per oracle.com/corporate/contact/global.html",
+  "evidence_na": "Corporate headquarters in Austin, Texas; previous HQ in Redwood Shores, California; Canadian headquarters in Markham, Ontario; multiple US offices across 20+ states per oracle.com/corporate/contact/field-offices",
+  "sources": [
+    "https://stockanalysis.com/stocks/orcl/employees/",
+    "https://sprouts.ai/blog/oracle-headquarters-office-locations",
+    "https://www.oracle.com/uk/corporate/contact/field-offices/",
+    "https://www.oracle.com/corporate/contact/global.html",
+    "https://exa.ai/websets/directory/oracle-offices"
+  ],
+  "confidence": "high",
+  "reason_if_out_of_scope": null
+}

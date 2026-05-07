@@ -1,0 +1,19 @@
+{
+  "company_name": "Razorpay",
+  "size_band": "2000-5000",
+  "employee_count_estimate": 4000,
+  "operates_in_eu": false,
+  "operates_in_na": false,
+  "operates_in_eu_or_na": false,
+  "evidence_eu": "ZoomInfo reports only 1-10 employees in Europe, which represents individual sales contacts, not operational presence",
+  "evidence_na": "ZoomInfo reports 11-50 employees in North America, but no physical offices found; company described as 'India's first full-stack financial solutions company' with all offices in India (Bengaluru, Delhi, multiple Indian cities per AmbitionBox and Glassdoor)",
+  "sources": [
+    "https://in.linkedin.com/company/razorpay",
+    "https://www.ambitionbox.com/overview/razorpay-overview",
+    "https://www.zoominfo.com/pic/razorpay-software-ltd/416311031",
+    "https://www.ambitionbox.com/overview/razorpay-overview/locations",
+    "https://www.trueup.io/co/razorpay"
+  ],
+  "confidence": "high",
+  "reason_if_out_of_scope": "Indian fintech company with headquarters in Bengaluru and all physical offices located exclusively in India per Glassdoor and AmbitionBox; no operational presence in EU or North America."
+}
