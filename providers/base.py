@@ -28,6 +28,27 @@ class ProviderResult:
     model_used: str | None = None          # the actual provider-specific model name used
 
 
+@dataclass
+class BatchRequest:
+    """A single request inside a batch. The custom_id identifies the request and
+    is preserved across submission → polling → result distribution."""
+    custom_id: str
+    system_prompt: str
+    user_message: str
+    model_tier: str = "smart"
+    max_tokens: int | None = None
+
+
+@dataclass
+class BatchHandle:
+    """Returned from submit_batch(). Used to poll status + fetch results."""
+    batch_id: str                          # provider-issued batch identifier
+    provider_name: str                     # which provider holds the batch
+    submitted_at: str                      # ISO datetime
+    request_count: int                     # how many requests in this batch
+    expected_status: str = "in_progress"   # provider-normalized status
+
+
 class LLMProvider(Protocol):
     """A model-agnostic ReAct loop runner.
 
@@ -72,4 +93,28 @@ class LLMProvider(Protocol):
 
         Returns a ProviderResult with the final text and usage stats.
         """
+        ...
+
+    # ---- Batch API (synthesis tasks only — no tool-use loops) ----
+
+    supports_batch: bool                   # True if submit_batch is implemented
+
+    def submit_batch(self, requests: list[BatchRequest]) -> BatchHandle:
+        """Submit a batch of one-shot requests (NO tool-use loops). Each
+        BatchRequest produces exactly one ProviderResult when polled.
+
+        Use for synthesis-only tasks across many accounts. ~50% off vs sync API,
+        with a 24h SLA (typically completes in 1-3h).
+
+        Raises NotImplementedError if `supports_batch` is False.
+        """
+        ...
+
+    def poll_batch(self, handle: BatchHandle) -> str:
+        """Return current normalized batch status: "in_progress" | "ended" | "errored"."""
+        ...
+
+    def fetch_batch_results(self, handle: BatchHandle) -> dict[str, ProviderResult]:
+        """Once status is "ended", fetch all per-request results.
+        Returns a dict mapping custom_id → ProviderResult."""
         ...

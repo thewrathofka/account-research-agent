@@ -8,7 +8,7 @@ when someone goes to fill this in.
 from __future__ import annotations
 
 import config
-from providers.base import LLMProvider, ProviderResult
+from providers.base import BatchHandle, BatchRequest, LLMProvider, ProviderResult
 from tools.base import Tool
 
 
@@ -16,6 +16,7 @@ class GeminiProvider(LLMProvider):
     name = "gemini"
     models = config.GEMINI_MODELS
     supports_caching = False  # Gemini has explicit context caching but we haven't wired it
+    supports_batch = False    # stub provider; full implementation deferred
 
     def __init__(self):
         self.model = self.models["smart"]
@@ -36,3 +37,12 @@ class GeminiProvider(LLMProvider):
             "to Gemini's `functionCall` / `functionResponse` format. See providers/base.py "
             "for the contract."
         )
+
+    def submit_batch(self, requests: list[BatchRequest]) -> BatchHandle:
+        raise NotImplementedError("GeminiProvider batch deferred (stub)")
+
+    def poll_batch(self, handle: BatchHandle) -> str:
+        raise NotImplementedError("GeminiProvider batch deferred (stub)")
+
+    def fetch_batch_results(self, handle: BatchHandle) -> dict[str, ProviderResult]:
+        raise NotImplementedError("GeminiProvider batch deferred (stub)")

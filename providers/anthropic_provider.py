@@ -1,17 +1,19 @@
 """Anthropic provider — wraps the anthropic SDK in the LLMProvider protocol.
 
 Supports model tiers (smart=Sonnet, fast=Haiku) and explicit prompt caching
-via cache_control: ephemeral on the system prompt block.
+via cache_control: ephemeral on the system prompt block. Also supports the
+Anthropic Message Batches API for ~50% off batch processing.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from anthropic import Anthropic
 
 import config
-from providers.base import LLMProvider, ProviderResult
+from providers.base import BatchHandle, BatchRequest, LLMProvider, ProviderResult
 from tools.base import Tool
 
 
@@ -19,6 +21,7 @@ class AnthropicProvider(LLMProvider):
     name = "anthropic"
     models = config.ANTHROPIC_MODELS
     supports_caching = True
+    supports_batch = True
 
     def __init__(self, max_retries: int = 8):
         self.model = self.models["smart"]
@@ -137,3 +140,85 @@ class AnthropicProvider(LLMProvider):
                 error=f"{type(e).__name__}: {e}",
                 model_used=model,
             )
+
+    # ---- Batch API ----
+
+    def submit_batch(self, requests: list[BatchRequest]) -> BatchHandle:
+        """Submit a Message Batch via Anthropic's Message Batches API.
+
+        Each BatchRequest becomes one message-create request. NO tool use is
+        supported in batch mode (synthesis tasks only). System prompts get
+        cache_control: ephemeral (helps when many requests share the same prompt).
+        """
+        from anthropic.types.messages.batch_create_params import Request
+
+        batch_requests = []
+        for r in requests:
+            model = self._resolve_model(r.model_tier)
+            batch_requests.append(Request(
+                custom_id=r.custom_id,
+                params={
+                    "model": model,
+                    "max_tokens": r.max_tokens or config.MAX_TOKENS,
+                    "system": [{
+                        "type": "text",
+                        "text": r.system_prompt,
+                        "cache_control": {"type": "ephemeral"},
+                    }],
+                    "messages": [{"role": "user", "content": r.user_message}],
+                },
+            ))
+        batch = self.client.messages.batches.create(requests=batch_requests)
+        return BatchHandle(
+            batch_id=batch.id,
+            provider_name=self.name,
+            submitted_at=datetime.now(timezone.utc).isoformat(),
+            request_count=len(requests),
+            expected_status=_normalize_batch_status(batch.processing_status),
+        )
+
+    def poll_batch(self, handle: BatchHandle) -> str:
+        """Return normalized status: "in_progress" | "ended" | "errored"."""
+        batch = self.client.messages.batches.retrieve(message_batch_id=handle.batch_id)
+        return _normalize_batch_status(batch.processing_status)
+
+    def fetch_batch_results(self, handle: BatchHandle) -> dict[str, ProviderResult]:
+        """Pull results JSONL stream and parse into per-custom_id ProviderResults."""
+        results: dict[str, ProviderResult] = {}
+        for entry in self.client.messages.batches.results(message_batch_id=handle.batch_id):
+            custom_id = entry.custom_id
+            res = entry.result
+            if res.type == "succeeded":
+                msg = res.message
+                text = "".join(b.text for b in msg.content if b.type == "text")
+                results[custom_id] = ProviderResult(
+                    text=text, tool_calls_made=0,
+                    input_tokens=msg.usage.input_tokens,
+                    output_tokens=msg.usage.output_tokens,
+                    cached_input_tokens=getattr(msg.usage, "cache_read_input_tokens", 0) or 0,
+                    iterations=1, stop_reason="end_turn",
+                    model_used=msg.model,
+                )
+            elif res.type == "errored":
+                err = getattr(res, "error", None)
+                err_msg = getattr(err, "message", str(err)) if err else "unknown batch error"
+                results[custom_id] = ProviderResult(
+                    text="", tool_calls_made=0, input_tokens=0, output_tokens=0,
+                    iterations=0, stop_reason="error", error=err_msg,
+                )
+            else:
+                results[custom_id] = ProviderResult(
+                    text="", tool_calls_made=0, input_tokens=0, output_tokens=0,
+                    iterations=0, stop_reason="error",
+                    error=f"batch entry unexpected type: {res.type}",
+                )
+        return results
+
+
+def _normalize_batch_status(provider_status: str) -> str:
+    """Map Anthropic processing_status to our normalized vocab."""
+    if provider_status == "ended":
+        return "ended"
+    if provider_status in ("canceling", "canceled"):
+        return "errored"
+    return "in_progress"

@@ -13,7 +13,7 @@ from typing import Any
 from openai import OpenAI
 
 import config
-from providers.base import LLMProvider, ProviderResult
+from providers.base import BatchHandle, BatchRequest, LLMProvider, ProviderResult
 from tools.base import Tool
 
 
@@ -21,6 +21,7 @@ class OpenAIProvider(LLMProvider):
     name = "openai"
     models = config.OPENAI_MODELS
     supports_caching = True  # auto-caches above 1024 tokens — no hint needed
+    supports_batch = False   # OpenAI Batch API uses file-upload flow; deferred
 
     def __init__(self, max_retries: int = 8):
         self.model = self.models["smart"]
@@ -145,6 +146,23 @@ class OpenAIProvider(LLMProvider):
                 error=f"{type(e).__name__}: {e}",
                 model_used=model,
             )
+
+
+    # ---- Batch API (deferred) ----
+
+    def submit_batch(self, requests: list[BatchRequest]) -> BatchHandle:
+        raise NotImplementedError(
+            "OpenAIProvider.submit_batch is deferred. Implementation needs the "
+            "OpenAI Batch API file-upload flow (create JSONL → upload → batch). "
+            "See https://platform.openai.com/docs/guides/batch. Anthropic batch "
+            "is fully implemented; use --provider anthropic for batch mode."
+        )
+
+    def poll_batch(self, handle: BatchHandle) -> str:
+        raise NotImplementedError("OpenAIProvider batch deferred")
+
+    def fetch_batch_results(self, handle: BatchHandle) -> dict[str, ProviderResult]:
+        raise NotImplementedError("OpenAIProvider batch deferred")
 
 
 def _assistant_message_to_dict(msg: Any) -> dict[str, Any]:

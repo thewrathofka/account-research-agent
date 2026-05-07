@@ -51,6 +51,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help=f"Comma-separated task names. Available: {','.join(TASK_REGISTRY)}")
     p.add_argument("--dry-run", action="store_true",
                    help="Run research but skip Notion writes (still logs to SQLite)")
+    p.add_argument("--batch", action="store_true",
+                   help="Use the Anthropic Message Batches API for synthesis tasks "
+                        "(~50%% cheaper, ~hours wait). Sync gate+research, batched "
+                        "synthesis, sync tool-using tasks. Anthropic only for now.")
     p.add_argument("--concurrency", type=int, default=config.DEFAULT_CONCURRENCY)
     p.add_argument("--db", default="runs.db", help="SQLite run-log path")
     p.add_argument("--provider", default=None,
@@ -93,8 +97,17 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Concurrency: {args.concurrency}\n")
 
     task_names = [t.strip() for t in args.tasks.split(",") if t.strip()]
-    orch = Orchestrator(crm=crm, run_log=run_log, provider=provider, concurrency=args.concurrency)
-    outcomes = orch.run(accounts, task_names, dry_run=args.dry_run)
+
+    if args.batch:
+        from batch_runner import run_batch
+        outcomes = run_batch(
+            crm=crm, run_log=run_log, provider=provider,
+            accounts=accounts, task_names=task_names, dry_run=args.dry_run,
+        )
+    else:
+        orch = Orchestrator(crm=crm, run_log=run_log, provider=provider,
+                            concurrency=args.concurrency)
+        outcomes = orch.run(accounts, task_names, dry_run=args.dry_run)
 
     print("\n--- Summary ---")
     for o in outcomes:
