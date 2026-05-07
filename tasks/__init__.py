@@ -17,10 +17,12 @@ from tasks.module_09 import Module09CreativeReality
 from tasks.module_12 import Module12CompetitorSnapshot
 from tasks.module_13 import Module13IndustryPulse
 from tasks.module_14 import Module14HiringSignal
+from tasks.research_pass import ResearchPass
 
 
 TASK_REGISTRY: dict[str, type[Task]] = {
     "company_overview": CompanyOverview,
+    "research_pass": ResearchPass,
     "module_01_gate": Module01Gate,
     "module_03_revenue_model": Module03RevenueModel,
     "module_05_corporate_structure": Module05CorporateStructure,
@@ -33,9 +35,14 @@ TASK_REGISTRY: dict[str, type[Task]] = {
 }
 
 # Phase 1 task set — passed by name to --tasks for the recommended monthly run.
-# Order matters: module_01_gate must be first so the GATE can short-circuit.
+# Order matters:
+#   1. module_01_gate runs first; short-circuits to out_of_scope if it fails
+#   2. research_pass runs second on accounts that pass the gate, gathers shared context
+#   3. synthesis-only modules read research_pass output (no own tools, single LLM call)
+#   4. modules with their own tools (9, 14) run their own agent loops
 PHASE1_TASKS = [
     "module_01_gate",
+    "research_pass",
     "module_03_revenue_model",
     "module_05_corporate_structure",
     "module_06_structural_news",
@@ -44,10 +51,6 @@ PHASE1_TASKS = [
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
     "module_14_hiring_signal",
-]
-PHASE1_TAVILY_TASKS = [
-    t for t in PHASE1_TASKS
-    if t not in ("module_09_creative_reality", "module_14_hiring_signal")
 ]
 
 # Tasks that act as gates — if their gate_passes() returns False, downstream

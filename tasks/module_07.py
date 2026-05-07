@@ -21,9 +21,7 @@ class Module07TriggerEvents(Task):
     section = "News"
     subsection = None
     prompt_module = prompt
-
-    def build_tools(self) -> list[Tool]:
-        return [build_search_tool()]
+    synthesis_only = True   # reads ResearchPass output, no own tools
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         triggers = output.get("triggers_detected") or []

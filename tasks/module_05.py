@@ -16,34 +16,7 @@ class Module05CorporateStructure(Task):
     section = "Overview"   # contributes a small note inside the Overview block-set
     subsection = None
     prompt_module = prompt
-
-    def build_tools(self) -> list[Tool]:
-        return [build_search_tool()]
-
-    def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
-        """Inject gate output (size, regions) so the model doesn't re-search those facts."""
-        gate = context.get("module_01_gate")
-        if not gate:
-            return f"Research the company: {account_name}"
-        prior = []
-        if gate.get("employee_count_estimate"):
-            prior.append(f"~{gate['employee_count_estimate']:,} employees")
-        if gate.get("size_band"):
-            prior.append(f"size band {gate['size_band']}")
-        regions = []
-        if gate.get("operates_in_eu"):
-            regions.append("EU")
-        if gate.get("operates_in_na"):
-            regions.append("NA")
-        if regions:
-            prior.append(f"operates in {' + '.join(regions)}")
-        prior_str = "; ".join(prior) if prior else "(no prior context)"
-        return (
-            f"Research the company: {account_name}.\n"
-            f"Prior research already established: {prior_str}. "
-            f"You do NOT need to re-verify these facts — focus your searches on "
-            f"corporate structure (parent / subsidiary / standalone, PE, sister brands)."
-        )
+    synthesis_only = True   # reads ResearchPass output, no own tools
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         fields: dict[str, Any] = {}

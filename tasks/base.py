@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any, Callable
 
+import config
 from providers.base import LLMProvider
 from tools.base import Tool
 
@@ -57,6 +58,12 @@ class Task:
     model_tier: str = "smart"   # "smart" (default Sonnet/gpt-4.1) | "fast" (Haiku/mini)
     cache_system_prompt: bool = True   # toggle caching per-task if needed
 
+    # If True, this task does NOT use tools or run an agent loop. It receives the
+    # ResearchPass output via context and produces its structured JSON in a single
+    # LLM call. Use for tasks whose source material is fully derivable from the
+    # shared research context. Saves ~50-70% per task vs the full agent loop.
+    synthesis_only: bool = False
+
     def build_tools(self) -> list[Tool]:
         """Return fresh Tool instances for this run (per-task call counters)."""
         return []
@@ -69,8 +76,40 @@ class Task:
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Default: just ask the model to research the company. Subclasses override
-        to inject prior-task context, which lets the agent skip redundant searches."""
+        to inject prior-task context, which lets the agent skip redundant searches.
+
+        Synthesis-only tasks use the helper below to fold ResearchPass output in.
+        """
+        if self.synthesis_only:
+            return self.synthesis_user_message(account_name, context)
         return f"Research the company: {account_name}"
+
+    def synthesis_user_message(self, account_name: str, context: dict[str, Any]) -> str:
+        """Build a synthesis-only user message that embeds the shared research context.
+        Override in subclasses if a task needs to also reference earlier synthesis outputs."""
+        research = (context.get("research_pass") or {}).get("raw_research", "")
+        sources = (context.get("research_pass") or {}).get("sources", [])
+        sources_block = "\n".join(f"- {u}" for u in sources) if sources else "(no sources captured)"
+        if not research:
+            # Fallback if research_pass didn't run — model has to do its own searches
+            # via tools (but synthesis_only=True means it has no tools). Surface this
+            # clearly so the model returns confidence=low rather than hallucinating.
+            return (
+                f"Company: {account_name}.\n\n"
+                "No upfront research context is available. Return your best-effort "
+                "answer based on general knowledge, but set confidence='low' and "
+                "leave fields null where you cannot verify."
+            )
+        return (
+            f"Company: {account_name}.\n\n"
+            f"## Research context (from upfront research pass)\n\n"
+            f"{research}\n\n"
+            f"## Sources\n{sources_block}\n\n"
+            "Using ONLY the research context above, fill out your task's JSON schema. "
+            "Do not invent facts that aren't present in the research context — set "
+            "fields to null and lower confidence if the research doesn't cover them. "
+            "The 'sources' field in your output must be a subset of the URLs above."
+        )
 
     # ---- run loop ----
 
@@ -83,18 +122,29 @@ class Task:
 
         system_prompt = self.prompt_module.SYSTEM_PROMPT
         prompt_version = getattr(self.prompt_module, "VERSION", "unknown")
-        tools = self.build_tools()
+        ctx = context or {}
 
         # Build the user message. If `context` contains relevant prior task outputs
         # this task can use, the subclass overrides build_user_message() to inject
         # them (saves search iterations).
-        user_message = self.build_user_message(account_name, context or {})
+        user_message = self.build_user_message(account_name, ctx)
+
+        # Synthesis-only tasks skip tools entirely — single LLM call, no agent loop.
+        # The shared research context is folded into user_message via the subclass's
+        # build_user_message() override.
+        if self.synthesis_only:
+            tools: list[Tool] = []
+            max_iter = 1
+        else:
+            tools = self.build_tools()
+            max_iter = config.MAX_AGENT_ITERATIONS
 
         start = time.time()
         result = provider.run_loop(
             system_prompt=system_prompt,
             user_message=user_message,
             tools=tools,
+            max_iterations=max_iter,
             model_tier=self.model_tier,
             cache_system_prompt=self.cache_system_prompt,
         )

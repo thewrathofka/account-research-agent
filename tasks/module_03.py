@@ -16,9 +16,7 @@ class Module03RevenueModel(Task):
     section = "Overview"
     subsection = None
     prompt_module = prompt
-
-    def build_tools(self) -> list[Tool]:
-        return [build_search_tool()]
+    synthesis_only = True   # reads ResearchPass output, no own tools
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         return {}  # this module writes only to the page body, not to properties

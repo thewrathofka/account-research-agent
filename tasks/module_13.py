@@ -22,9 +22,7 @@ class Module13IndustryPulse(Task):
     subsection = None
     prompt_module = prompt
     model_tier = "fast"  # news headlines lookup; Haiku/mini handles fine
-
-    def build_tools(self) -> list[Tool]:
-        return [build_search_tool()]
+    synthesis_only = True   # reads ResearchPass output, no own tools
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         if output.get("industry_movement_detected"):

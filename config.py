@@ -76,7 +76,10 @@ OPENAI_MODEL = OPENAI_MODELS["smart"]
 GEMINI_MODEL = GEMINI_MODELS["smart"]
 
 # ---- Generation params ----
-MAX_TOKENS = 4096
+# 8192 covers the ResearchPass module's broad research output (~4-5k tokens of
+# raw_research). Synthesis tasks output 200-800 tokens — the cap is irrelevant
+# for them, no cost impact.
+MAX_TOKENS = 8192
 MAX_AGENT_ITERATIONS = 10
 
 # ---- Concurrency + cost gates ----

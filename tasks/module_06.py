@@ -17,9 +17,7 @@ class Module06StructuralNews(Task):
     subsection = None
     prompt_module = prompt
     model_tier = "fast"  # news lookup; Haiku/mini handles fine
-
-    def build_tools(self) -> list[Tool]:
-        return [build_search_tool()]
+    synthesis_only = True   # reads ResearchPass output, no own tools
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         fields: dict[str, Any] = {}
