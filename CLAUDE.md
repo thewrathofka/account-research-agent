@@ -28,27 +28,36 @@ so research output is interchangeable.
 
 ---
 
-## Current state (Track 1 — Python, v0.2.0 = end of Phase 1.5a + 1.5b step 5)
+## Current state (Track 1 — Python, v0.3.0 = end of Phase 1.5 (a + b))
 
-**Cost picture (per account, anthropic provider):**
+**Cost picture (per account, Anthropic provider):**
 | Version | Per account | Notes |
 |---|---|---|
-| v0.0.0 single-file | $1.37 | placeholder agent, all 9 tasks each with 3-iteration loops |
-| v0.1.0 Phase 1 | $1.37 | architectural — 9 real prompts, no cost optimization yet |
-| **v0.2.0 (now)** | **$0.10–0.20** | model tiers + tool dedup + shared research context + cache hits |
+| v0.0.0 / v0.1.0 | $1.37 | placeholder / 9 real prompts, no cost optimization |
+| v0.2.0 | ~$0.27 | model tiers + dedup + shared research context |
+| **v0.3.0 (now)** | **~$0.20** | + v1.1.0 prompts (trimmed) + Batch API for synthesis |
 
-Wins shipped in 1.5a + 1.5b step 5:
-- Per-task model tier (Haiku for modules 6/12/13, Sonnet for the rest)
-- Tool result dedup (24h SQLite cache; same query within 24h → instant)
-- Gate output reuse (modules 5+14 read prior gate output, skip redundant searches)
-- Shared research context: ResearchPass runs ONCE per account; modules 3/5/6/7/12/13
-  drop their agent loops and synthesize from the shared context (synthesis_only=True)
-- Anthropic prompt caching now actually delivers savings — research context > 1024 tokens
-  triggers the cache. Live measurement on Oracle: 47% cache hit rate on synthesis turns.
+All 7 cost pathways shipped:
+- ✅ #1 Per-task model tier (Haiku for modules 6/12/13)
+- ✅ #2 Prompt caching abstraction (Anthropic ephemeral, OpenAI auto)
+- ✅ #3 24h tool result dedup (SQLite)
+- ✅ #4 Gate output reuse downstream
+- ✅ #5 Shared research context (ResearchPass + synthesis_only modules)
+- ✅ #6 Batch API support (Anthropic only; OpenAI batch deferred)
+- ✅ #7 v1.1.0 prompt trim (synthesis prompts cleaned, integer guards added)
+- ✅ #8 Brave + Jina evaluation (infra ready; recommendation: stay on Tavily)
 
-Deferred to focused follow-ups (out of scope for this session):
-- **Step 6 — Batch API** (~$0.05 final cost; ~4-6h build)
-- **Step 7 — Eval-driven prompt trimming** (~$0.03 final cost; needs per-prompt evals)
+Cross-provider proof of swap (live-measured):
+- module_01_gate v1.1.0 on Anthropic Sonnet 4.5: 100% schema/calib/sources, 91% coverage
+- module_01_gate v1.1.0 on OpenAI gpt-4.1: 100% schema/calib/sources, 94% coverage
+- ~47% cheaper per call on gpt-4.1 for this task
+- One-line swap via `--provider openai`
+
+Open follow-ups:
+- Full 9-task pipeline cross-provider eval (so far only module_01_gate measured)
+- OpenAI Batch API (file-upload flow; not bundled this PR)
+- Gemini provider (stub today)
+- Per-prompt golden cases for synthesis modules (only module_01_gate has goldens)
 
 ---
 
