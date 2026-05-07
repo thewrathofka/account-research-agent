@@ -15,8 +15,9 @@ import crm as crm_module
 from crm import Account, NotionCRM
 from providers.base import LLMProvider
 from run_log import RunLog, RunRecord, iso_now, serialize_output
-from tasks import TASK_REGISTRY
+from tasks import GATE_TASKS, TASK_REGISTRY
 from tasks.base import Task, TaskResult
+from tasks.module_01 import Module01Gate
 
 
 log = logging.getLogger(__name__)
@@ -93,11 +94,25 @@ class Orchestrator:
         self, account: Account, tasks: list[Task], dry_run: bool,
     ) -> AccountOutcome:
         results: list[TaskResult] = []
+        gate_failed = False
+
         for task in tasks:
             log.info("[%s] %s — running…", account.name, task.name)
             result = task.run(account.name, provider=self.provider)
             results.append(result)
             self._record_run(account, result, dry_run)
+
+            # Gate enforcement: if a gate task ran and its gate_passes() is False,
+            # skip ALL downstream tasks for this account.
+            if task.name in GATE_TASKS and result.error is None:
+                if not type(task).gate_passes(result.output):
+                    gate_failed = True
+                    log.info("[%s] gate %s FAILED — skipping downstream tasks",
+                             account.name, task.name)
+                    break
+
+        if gate_failed:
+            return self._handle_gate_failure(account, results, dry_run)
 
         overall_conf = _aggregate_confidence(results)
         overall_status = _derive_status(results, overall_conf)
@@ -120,6 +135,54 @@ class Orchestrator:
         return AccountOutcome(
             account=account, task_results=results, overall_confidence=overall_conf,
             overall_status=overall_status, wrote_to_notion=True,
+        )
+
+    def _handle_gate_failure(
+        self, account: Account, results: list[TaskResult], dry_run: bool,
+    ) -> AccountOutcome:
+        """Gate task ran successfully but determined the account is out of scope.
+        Write a minimal Notion update + reason; skip page-body assembly of full sections."""
+        gate_result = next((r for r in results if r.task_name in GATE_TASKS), None)
+        confidence = gate_result.confidence if gate_result else "low"
+        if confidence == "failed":
+            confidence = "low"
+
+        if dry_run:
+            return AccountOutcome(
+                account=account, task_results=results,
+                overall_confidence=confidence, overall_status="out_of_scope",
+                wrote_to_notion=False,
+            )
+
+        try:
+            properties: dict[str, Any] = {
+                crm_module.PROP_LAST_RESEARCHED: {"date": {"start": date.today().isoformat()}},
+                crm_module.PROP_RESEARCH_CONFIDENCE: {"select": {"name": confidence}},
+                crm_module.PROP_RESEARCH_STATUS: {"select": {"name": "out_of_scope"}},
+            }
+            self.crm.update_properties(account.page_id, properties)
+
+            # Append a small "out of scope" notice to the page body.
+            blocks = [
+                crm_module.heading_2(f"Research — {date.today().isoformat()}"),
+                crm_module.paragraph("Out of scope: gate failed (no EU/NA operations confirmed)."),
+            ]
+            if gate_result and gate_result.output:
+                reason = gate_result.output.get("reason_if_out_of_scope")
+                if reason:
+                    blocks.append(crm_module.paragraph(f"Reason: {reason}"))
+            blocks.append(crm_module.divider())
+            self.crm.append_blocks(account.page_id, blocks)
+        except Exception as e:
+            log.exception("[%s] Notion write failed (gate path)", account.name)
+            return AccountOutcome(
+                account=account, task_results=results, overall_confidence=confidence,
+                overall_status="failed", wrote_to_notion=False, error=str(e),
+            )
+
+        return AccountOutcome(
+            account=account, task_results=results, overall_confidence=confidence,
+            overall_status="out_of_scope", wrote_to_notion=True,
         )
 
     def _record_run(self, account: Account, result: TaskResult, dry_run: bool) -> None:
