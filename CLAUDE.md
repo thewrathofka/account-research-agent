@@ -28,6 +28,30 @@ so research output is interchangeable.
 
 ---
 
+## Current state (Track 1 — Python, v0.2.0 = end of Phase 1.5a + 1.5b step 5)
+
+**Cost picture (per account, anthropic provider):**
+| Version | Per account | Notes |
+|---|---|---|
+| v0.0.0 single-file | $1.37 | placeholder agent, all 9 tasks each with 3-iteration loops |
+| v0.1.0 Phase 1 | $1.37 | architectural — 9 real prompts, no cost optimization yet |
+| **v0.2.0 (now)** | **$0.10–0.20** | model tiers + tool dedup + shared research context + cache hits |
+
+Wins shipped in 1.5a + 1.5b step 5:
+- Per-task model tier (Haiku for modules 6/12/13, Sonnet for the rest)
+- Tool result dedup (24h SQLite cache; same query within 24h → instant)
+- Gate output reuse (modules 5+14 read prior gate output, skip redundant searches)
+- Shared research context: ResearchPass runs ONCE per account; modules 3/5/6/7/12/13
+  drop their agent loops and synthesize from the shared context (synthesis_only=True)
+- Anthropic prompt caching now actually delivers savings — research context > 1024 tokens
+  triggers the cache. Live measurement on Oracle: 47% cache hit rate on synthesis turns.
+
+Deferred to focused follow-ups (out of scope for this session):
+- **Step 6 — Batch API** (~$0.05 final cost; ~4-6h build)
+- **Step 7 — Eval-driven prompt trimming** (~$0.03 final cost; needs per-prompt evals)
+
+---
+
 ## Current state (Track 1 — Python, v0.1.0 = end of Phase 1)
 
 **Structure:** package layout under `~/code/account-research-agent/`. The file

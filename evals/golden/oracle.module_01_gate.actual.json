@@ -5,14 +5,14 @@
   "operates_in_eu": true,
   "operates_in_na": true,
   "operates_in_eu_or_na": true,
-  "evidence_eu": "EMEA headquarters in Reading, England (Thames Valley Park campus); EU offices in Germany (Frankfurt), Spain (Madrid), France, Italy, Poland (Warsaw), Hungary (Budapest), and multiple other EU countries per oracle.com/corporate/contact/global.html",
-  "evidence_na": "Corporate headquarters in Austin, Texas; previous HQ in Redwood Shores, California; Canadian headquarters in Markham, Ontario; multiple US offices across 20+ states per oracle.com/corporate/contact/field-offices",
+  "evidence_eu": "EMEA headquarters in Reading, England (Thames Valley Park). Multiple EU offices confirmed including Germany (Frankfurt), Spain (Madrid), France, Italy, Poland (Warsaw), Hungary (Budapest), and offices across UK, Ireland, Austria, Belgium, Denmark, Finland, Greece, Netherlands, Norway, Portugal, Sweden, Switzerland per oracle.com official contact pages",
+  "evidence_na": "Global headquarters in Austin, Texas (2300 Cloud Way). Extensive North American presence with offices across multiple US states including California (Redwood Shores, Santa Clara, Irvine), Illinois, Florida, Massachusetts, New York, Colorado, Oregon, Pennsylvania, Virginia, and Canadian operations per oracle.com/corporate/contact/field-offices",
   "sources": [
     "https://stockanalysis.com/stocks/orcl/employees/",
-    "https://sprouts.ai/blog/oracle-headquarters-office-locations",
     "https://www.oracle.com/uk/corporate/contact/field-offices/",
-    "https://www.oracle.com/corporate/contact/global.html",
-    "https://exa.ai/websets/directory/oracle-offices"
+    "https://www.oracle.com/corporate/contact/field-offices/",
+    "https://sprouts.ai/blog/oracle-headquarters-office-locations",
+    "https://www.oracle.com/corporate/contact/global.html"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null
