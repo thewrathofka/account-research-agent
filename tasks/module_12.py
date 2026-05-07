@@ -7,8 +7,6 @@ from typing import Any
 import crm
 import prompts.module_12_competitor_snapshot as prompt
 from tasks.base import Task
-from tools.base import Tool
-from tools import build_search_tool
 
 
 class Module12CompetitorSnapshot(Task):

@@ -10,11 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import pytest
 
-from providers.base import LLMProvider, ProviderResult
+from providers.base import ProviderResult
 from tasks._legacy import CompanyOverview
-from tools.base import Tool
 
 
 # ---- Fake tool + provider for offline tests ----

@@ -12,8 +12,6 @@ from typing import Any
 import crm
 import prompts.module_07_trigger_events as prompt
 from tasks.base import Task
-from tools.base import Tool
-from tools import build_search_tool
 
 
 class Module07TriggerEvents(Task):

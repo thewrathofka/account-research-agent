@@ -7,7 +7,7 @@ never see SDK-specific objects. Swapping providers is a one-line change in
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 from tools.base import Tool

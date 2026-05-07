@@ -13,12 +13,10 @@ than failing the whole run.
 
 from __future__ import annotations
 
-import json
 import os
 import time
 from dataclasses import dataclass
 from datetime import date
-from pathlib import Path
 from typing import Any
 
 import config
@@ -26,7 +24,7 @@ from evals.metrics import (
     score_confidence_calibration, score_field_coverage,
     score_schema_compliance, score_source_verification,
 )
-from evals.runner import GOLDEN_DIR, RESULTS_DIR, load_golden_cases
+from evals.runner import RESULTS_DIR, load_golden_cases
 from providers import get_provider
 from tasks import TASK_REGISTRY
 

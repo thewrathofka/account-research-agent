@@ -18,9 +18,9 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 import config
 from providers.base import LLMProvider

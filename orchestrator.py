@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,7 +16,6 @@ from providers.base import LLMProvider
 from run_log import RunLog, RunRecord, iso_now, serialize_output
 from tasks import GATE_TASKS, TASK_REGISTRY
 from tasks.base import Task, TaskResult
-from tasks.module_01 import Module01Gate
 
 
 log = logging.getLogger(__name__)

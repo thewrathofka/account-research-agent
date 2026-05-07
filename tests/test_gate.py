@@ -4,13 +4,12 @@ is out of scope, the orchestrator must skip ALL downstream tasks for that accoun
 
 from __future__ import annotations
 
-import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from crm import Account, NotionCRM
+from crm import Account
 from orchestrator import Orchestrator
 from providers.base import ProviderResult
 from run_log import RunLog
