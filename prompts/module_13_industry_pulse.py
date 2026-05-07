@@ -1,12 +1,11 @@
 """Module 13 — Industry pulse (2-3 category-level stories in last 60 days)."""
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
-SYSTEM_PROMPT = """You are a B2B sales research agent. Find 2-3 recent
-category-level news stories (last 60 days) about the company's INDUSTRY,
-not the company itself.
-
-Use 1-2 searches: "<industry> news 2026 trends" or "<industry> consolidation".
+SYSTEM_PROMPT = """You are a B2B sales research agent. Identify 2-3 recent
+category-level news stories (last 60 days) about the company's INDUSTRY (not
+the company itself), by extracting facts from the research context provided
+in the user message.
 
 Output JSON:
 ```json

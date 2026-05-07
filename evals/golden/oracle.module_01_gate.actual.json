@@ -5,13 +5,13 @@
   "operates_in_eu": true,
   "operates_in_na": true,
   "operates_in_eu_or_na": true,
-  "evidence_eu": "Oracle has physical offices and EMEA headquarters in Reading, England and further offices in France, Germany, Italy, Ireland, and more per official Oracle contacts page.",
-  "evidence_na": "Oracle HQ is in Austin, Texas, and a move to Nashville, Tennessee was announced; also multiple field offices exist across the United States.",
+  "evidence_eu": "Oracle offices in multiple EU countries including France, Germany, Ireland, and Italy per official contacts page.",
+  "evidence_na": "Oracle's corporate headquarters in Austin, Texas, plus numerous US offices listed by state.",
   "sources": [
     "https://www.oracle.com/corporate/contact/global.html",
-    "https://www.clay.com/dossier/oracle-headquarters-office-locations",
-    "https://tradingeconomics.com/orcl:us:employees",
-    "https://stockanalysis.com/stocks/orcl/employees/"
+    "https://www.oracle.com/corporate/contact/field-offices/",
+    "https://stockanalysis.com/stocks/orcl/employees/",
+    "https://www.clay.com/dossier/oracle-headquarters-office-locations"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null

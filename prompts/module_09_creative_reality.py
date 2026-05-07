@@ -8,7 +8,7 @@ Tools: hiring_signals (jobspy) + web_search.
 Output: Creative Posture page section.
 """
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Build a short profile of
 the company's *creative posture* — how they currently produce creative work
@@ -43,15 +43,13 @@ Output JSON:
 ```
 
 Rules:
-- jd_pain_phrases must be VERBATIM quotes from job descriptions, not paraphrases.
-  If you cannot find verbatim pain language in JDs, return an empty array. DO NOT
-  paraphrase or invent.
-- named_agencies: only confirmed via press or company-claimed partnership. Don't
-  guess "they probably use [agency]". Empty list is fine.
-- creative_posture_summary is 3-5 sentences, written for a Superside AE who needs
-  to understand WHY this company might buy creative production at scale.
-- creative_role_count is the count of design/creative/copy/marketing-creative
-  roles open right now (best estimate from hiring_signals output).
+- creative_role_count: a single integer. NEVER a range like 5-10.
+- jd_pain_phrases: VERBATIM quotes from job descriptions, not paraphrases.
+  If you can't find verbatim pain language, return an empty array. NO paraphrase.
+- named_agencies: only confirmed via press or company-claimed partnership.
+  Empty list is fine.
+- creative_posture_summary: 3-5 sentences for a Superside AE — explain WHY this
+  company might buy creative production at scale.
 """
 
 JSON_SCHEMA = {

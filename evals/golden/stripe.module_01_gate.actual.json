@@ -1,17 +1,17 @@
 {
   "company_name": "Stripe, Inc.",
   "size_band": "5000+",
-  "employee_count_estimate": 8000,
+  "employee_count_estimate": 8150,
   "operates_in_eu": true,
   "operates_in_na": true,
   "operates_in_eu_or_na": true,
-  "evidence_eu": "Dual headquarters in Dublin, Ireland, and additional offices in London and Paris per stripe.com/newsroom/information and exa.ai.",
-  "evidence_na": "Dual headquarters in South San Francisco, CA, and regional offices in Chicago, Atlanta, New York, and Seattle per exa.ai and Glassdoor.",
+  "evidence_eu": "Dual headquarters in Dublin, Ireland plus offices in London and Paris (stripe.com/newsroom/information, Glassdoor, Bloomberg)",
+  "evidence_na": "Dual headquarters in South San Francisco and offices in Chicago, New York, and Seattle (Craft.co, Glassdoor, Clay.com)",
   "sources": [
     "https://stripe.com/newsroom/information",
-    "https://exa.ai/websets/directory/stripe-offices",
-    "https://www.linkedin.com/company/stripe",
-    "https://www.unifygtm.com/insights-headcount/stripe"
+    "https://craft.co/stripe/locations",
+    "https://www.reveliolabs.com/companies/stripe/employees/",
+    "https://www.glassdoor.com/Location/All-Stripe-Office-Locations-E671932.htm"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null

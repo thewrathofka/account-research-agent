@@ -1,11 +1,10 @@
 """Module 5 — Corporate structure (standalone vs subsidiary vs parent + PE)."""
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine the company's corporate
-structure: standalone, subsidiary, or parent.
-
-Use 1-2 searches. Wikipedia and Crunchbase free pages are usually authoritative.
+structure (standalone / subsidiary / parent + PE) by extracting facts from the
+research context provided in the user message.
 
 Output JSON:
 ```json

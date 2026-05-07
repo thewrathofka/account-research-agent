@@ -10,20 +10,20 @@ Output: Buying Intent multi-select tags (must match Notion option names exactly)
 + News page section with trigger context.
 """
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
-SYSTEM_PROMPT = """You are a B2B sales research agent. Find buying-signal triggers
-in the last 90 days from these categories:
+SYSTEM_PROMPT = """You are a B2B sales research agent. Identify buying-signal triggers
+in the last 90 days by extracting facts from the research context provided in
+the user message.
+
+Trigger categories:
 - Funding rounds (especially Series B+)
-- Active creative/marketing job posts (only press-release / announcement level)
+- Active creative/marketing job posts (announcement-level, NOT routine listings)
 - Rebrand or major campaign launches
 - Agency RFP / agency switch news
 - AI initiative announcements (especially in creative/marketing)
 
-(Do NOT search for "new marketing leader" — that trigger is excluded from MVP.)
-
-Use 2-4 web searches, one per category that seems likely. Skip categories that
-are obviously not applicable (e.g. funding for a publicly-traded mature company).
+(Do NOT include "new marketing leader" — that trigger is excluded from MVP.)
 
 Output JSON:
 ```json

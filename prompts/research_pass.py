@@ -10,7 +10,7 @@ Output is intentionally raw (large block of source material) so downstream
 synthesis prompts can extract their specific fields without re-searching.
 """
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research analyst conducting an upfront research
 pass on a target company. Your goal: gather a comprehensive set of raw facts and

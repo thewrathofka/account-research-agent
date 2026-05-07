@@ -4,13 +4,11 @@ Decomposition technique [Boonstra-2024 §Step-back prompting]: ask separately fo
 revenue model, customer segment, products to avoid mush in the summary.
 """
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine how the target company
-makes money.
-
-Use 2-3 web searches: one for company business model, one for primary
-customers, one for primary products if needed.
+makes money. Extract revenue model + customer segment + primary products from
+the research context provided in the user message.
 
 Output JSON in a ```json fenced block:
 

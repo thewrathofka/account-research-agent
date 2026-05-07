@@ -89,7 +89,7 @@ def test_gate_pass_runs_downstream_tasks():
     with tempfile.TemporaryDirectory() as td:
         dbpath = Path(td) / "runs.db"
         provider = ScriptedProvider(responses={
-            "You are a B2B sales research agent verifying whether a target company": GATE_PASS_TEXT,
+            "You are a B2B sales research agent verifying ICP fit. Confirm the": GATE_PASS_TEXT,
             "You are a B2B sales research agent. Your job is to research a company": '```json\n{"company_name":"Acme","summary":"x","industry":"y","confidence":"high","sources":["http://a"]}\n```',
         })
         orch = _make_orch(provider, dbpath)
@@ -106,7 +106,7 @@ def test_gate_fail_skips_downstream_tasks():
     with tempfile.TemporaryDirectory() as td:
         dbpath = Path(td) / "runs.db"
         provider = ScriptedProvider(responses={
-            "You are a B2B sales research agent verifying whether a target company": GATE_FAIL_TEXT,
+            "You are a B2B sales research agent verifying ICP fit. Confirm the": GATE_FAIL_TEXT,
         })
         orch = _make_orch(provider, dbpath)
         account = Account(page_id="p1", name="Tiny Indian Fintech", rep="Katarina",
@@ -123,7 +123,7 @@ def test_gate_fail_writes_out_of_scope_status_to_notion():
     with tempfile.TemporaryDirectory() as td:
         dbpath = Path(td) / "runs.db"
         provider = ScriptedProvider(responses={
-            "You are a B2B sales research agent verifying whether a target company": GATE_FAIL_TEXT,
+            "You are a B2B sales research agent verifying ICP fit. Confirm the": GATE_FAIL_TEXT,
         })
         orch = _make_orch(provider, dbpath)
         account = Account(page_id="p1", name="Tiny Indian Fintech", rep="Katarina",

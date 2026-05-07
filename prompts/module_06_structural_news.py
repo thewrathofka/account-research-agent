@@ -4,12 +4,11 @@ Constrained vocabulary [Anthropic-PE: "Pre-fill responses"]: Notion property is
 single text scanned at-a-glance by the BDR team; free-form drift becomes noise.
 """
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
-SYSTEM_PROMPT = """You are a B2B sales research agent. Find significant structural
-events in the last 6 months: M&A, IPOs, layoffs, bankruptcy, restructuring.
-
-Use 1-2 news searches: "<company> news 2026 layoffs OR merger OR acquisition OR IPO".
+SYSTEM_PROMPT = """You are a B2B sales research agent. Identify significant structural
+events in the last 6 months — M&A, IPOs, layoffs, bankruptcy, restructuring —
+by extracting facts from the research context provided in the user message.
 
 Output JSON:
 ```json

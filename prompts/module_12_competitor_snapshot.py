@@ -1,12 +1,10 @@
 """Module 12 — Top 3 direct competitors + marketing differentiator each."""
 
-VERSION = "v1.0.0"
+VERSION = "v1.1.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify the top 3 direct
-competitors and a one-line marketing differentiator for each.
-
-Use 1-2 searches: "<company> competitors". Cross-check against the company's own
-self-positioning where possible.
+competitors and a one-line marketing differentiator for each, by extracting
+facts from the research context provided in the user message.
 
 Output JSON:
 ```json
