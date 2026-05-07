@@ -13,7 +13,7 @@ import prompts.module_14_hiring_signal as prompt
 from tasks.base import Task
 from tools.base import Tool
 from tools.hiring_signals import HiringSignalsTool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module14HiringSignal(Task):
@@ -23,7 +23,7 @@ class Module14HiringSignal(Task):
     prompt_module = prompt
 
     def build_tools(self) -> list[Tool]:
-        return [HiringSignalsTool(), WebSearchTool()]
+        return [HiringSignalsTool(), build_search_tool()]
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Use gate output (size_band) to skip headcount-confirmation searches."""

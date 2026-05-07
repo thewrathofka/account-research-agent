@@ -9,7 +9,7 @@ import prompts.module_09_creative_reality as prompt
 from tasks.base import Task
 from tools.base import Tool
 from tools.hiring_signals import HiringSignalsTool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module09CreativeReality(Task):
@@ -19,7 +19,7 @@ class Module09CreativeReality(Task):
     prompt_module = prompt
 
     def build_tools(self) -> list[Tool]:
-        return [HiringSignalsTool(), WebSearchTool()]
+        return [HiringSignalsTool(), build_search_tool()]
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         return {}  # page-body only

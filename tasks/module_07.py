@@ -13,7 +13,7 @@ import crm
 import prompts.module_07_trigger_events as prompt
 from tasks.base import Task
 from tools.base import Tool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module07TriggerEvents(Task):
@@ -23,7 +23,7 @@ class Module07TriggerEvents(Task):
     prompt_module = prompt
 
     def build_tools(self) -> list[Tool]:
-        return [WebSearchTool()]
+        return [build_search_tool()]
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         triggers = output.get("triggers_detected") or []

@@ -13,7 +13,7 @@ import crm
 import prompts.module_13_industry_pulse as prompt
 from tasks.base import Task
 from tools.base import Tool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module13IndustryPulse(Task):
@@ -24,7 +24,7 @@ class Module13IndustryPulse(Task):
     model_tier = "fast"  # news headlines lookup; Haiku/mini handles fine
 
     def build_tools(self) -> list[Tool]:
-        return [WebSearchTool()]
+        return [build_search_tool()]
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         if output.get("industry_movement_detected"):

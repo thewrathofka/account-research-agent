@@ -16,8 +16,13 @@ load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")          # required iff PROVIDER is OpenAI
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")            # required iff SEARCH_BACKEND in ("brave", "brave_jina")
+JINA_API_KEY = os.getenv("JINA_API_KEY", "")          # optional — Jina Reader works without a key on free tier
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
+
+# Search backend: "tavily" (default, current) | "brave" | "brave_jina"
+SEARCH_BACKEND = os.getenv("SEARCH_BACKEND", "tavily")
 
 # ---- Required keys depend on which provider is active ----
 def _validate_keys() -> None:
@@ -31,6 +36,13 @@ def _validate_keys() -> None:
         always_required["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
     elif PROVIDER_NAME == "openai":
         always_required["OPENAI_API_KEY"] = OPENAI_API_KEY
+    if SEARCH_BACKEND == "tavily":
+        # already in always_required above
+        pass
+    elif SEARCH_BACKEND in ("brave", "brave_jina"):
+        always_required["BRAVE_API_KEY"] = BRAVE_API_KEY
+        # Tavily key not required when using Brave
+        always_required.pop("TAVILY_API_KEY", None)
     for name, value in always_required.items():
         if not value or "PLACEHOLDER" in value:
             print(f"ERROR: {name} is missing or still a placeholder in .env")

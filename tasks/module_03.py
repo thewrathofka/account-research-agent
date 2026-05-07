@@ -8,7 +8,7 @@ import crm
 import prompts.module_03_revenue_model as prompt
 from tasks.base import Task
 from tools.base import Tool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module03RevenueModel(Task):
@@ -18,7 +18,7 @@ class Module03RevenueModel(Task):
     prompt_module = prompt
 
     def build_tools(self) -> list[Tool]:
-        return [WebSearchTool()]
+        return [build_search_tool()]
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         return {}  # this module writes only to the page body, not to properties

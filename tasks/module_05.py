@@ -8,7 +8,7 @@ import crm
 import prompts.module_05_corporate_structure as prompt
 from tasks.base import Task
 from tools.base import Tool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module05CorporateStructure(Task):
@@ -18,7 +18,7 @@ class Module05CorporateStructure(Task):
     prompt_module = prompt
 
     def build_tools(self) -> list[Tool]:
-        return [WebSearchTool()]
+        return [build_search_tool()]
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Inject gate output (size, regions) so the model doesn't re-search those facts."""

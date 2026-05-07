@@ -8,7 +8,7 @@ import crm
 import prompts.module_12_competitor_snapshot as prompt
 from tasks.base import Task
 from tools.base import Tool
-from tools.web_search import WebSearchTool
+from tools import build_search_tool
 
 
 class Module12CompetitorSnapshot(Task):
@@ -19,7 +19,7 @@ class Module12CompetitorSnapshot(Task):
     model_tier = "fast"  # competitor lookup is straightforward; Haiku/mini handles fine
 
     def build_tools(self) -> list[Tool]:
-        return [WebSearchTool()]
+        return [build_search_tool()]
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         return {}  # page-body only
