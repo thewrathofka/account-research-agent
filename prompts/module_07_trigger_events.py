@@ -15,7 +15,9 @@ that property is now the manual-only BDR property and the agent never touches it
 All agent-detected trigger tags now belong on "Buying Signals".)
 """
 
-VERSION = "v1.3.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.4.0"  # v1.4.0: citations array + [N] markers in trigger summaries
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify buying-signal triggers
 by extracting facts from the research context provided in the user message.
@@ -79,11 +81,15 @@ Rules:
   trigger, drop it.
 - DO NOT invent triggers. If your searches return nothing, return [] and
   confidence="medium" or "low".
-"""
+- Each trigger_details `summary` should carry `[N]` citation markers for the
+  specific date, dollar amount, lead investor name, etc. The summary becomes
+  a bullet under News (and a per-signal subsection); the orchestrator
+  rewrites markers into clickable links.
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["triggers_detected", "trigger_details", "sources", "confidence"],
+    "required": ["triggers_detected", "trigger_details", "citations", "sources", "confidence"],
     "properties": {
         "triggers_detected": {
             "type": "array",
@@ -105,6 +111,7 @@ JSON_SCHEMA = {
                 },
             },
         },
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },

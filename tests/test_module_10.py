@@ -138,6 +138,7 @@ def test_schema_accepts_pure_b2b_output() -> None:
             {"platform": "tiktok", "ads_running": 0, "volume": "none",
              "format_mix": [], "note": "Not applicable — not Gen-Z/lifestyle."},
         ],
+        "citations": [],
         "sources": ["https://linkedin.com/ad/x"],
         "confidence": "medium",
     }
@@ -156,6 +157,7 @@ def test_schema_rejects_two_platforms() -> None:
             {"platform": "meta", "ads_running": 0, "volume": "none",
              "format_mix": [], "note": "..."},
         ],
+        "citations": [],
         "sources": [],
         "confidence": "medium",
     }

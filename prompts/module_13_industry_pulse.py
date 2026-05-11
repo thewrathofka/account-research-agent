@@ -1,6 +1,8 @@
 """Module 13 — Industry pulse (2-3 category-level stories in last 60 days)."""
 
-VERSION = "v1.2.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.3.0"  # v1.3.0: citations array + [N] markers in story headlines
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify 2-3 recent
 category-level news stories about the company's INDUSTRY (not the company
@@ -51,11 +53,14 @@ Rules:
 - 2-3 stories. If only 1 truly relevant story exists, include only it and set
   confidence="medium". 0 stories returned if nothing fits the window.
 - The "industry" field captures the category as you see it (one phrase).
-"""
+- Each story `headline` should end with a `[N]` citation marker for the source
+  publication. The headline becomes a bullet under Competitor Landscape; the
+  orchestrator turns the marker into a clickable link.
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["industry", "stories", "industry_movement_detected", "sources", "confidence"],
+    "required": ["industry", "stories", "industry_movement_detected", "citations", "sources", "confidence"],
     "properties": {
         "industry": {"type": "string"},
         "stories": {
@@ -73,6 +78,7 @@ JSON_SCHEMA = {
             },
         },
         "industry_movement_detected": {"type": "boolean"},
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },

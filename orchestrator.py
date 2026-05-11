@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -17,6 +18,13 @@ from run_log import RunLog, RunRecord, iso_now, serialize_output
 from tasks import GATE_TASKS, TASK_REGISTRY
 from tasks.base import Task, TaskResult
 from writeback import write_account_outcome, write_gate_failure_to_notion
+
+
+# Inline citation marker syntax in page-block text content. Each module emits
+# module-local [N] markers; the orchestrator re-numbers them per page-body
+# section (see _process_section_citations) and rewrites them into clickable
+# Notion link spans (see _rewrite_block_citation_markers).
+_CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
 
 
 log = logging.getLogger(__name__)
@@ -275,6 +283,128 @@ _SUBSECTION_ORDER: dict[str, list[str | None]] = {
 }
 
 
+def _process_section_citations(
+    results_in_display_order: list[TaskResult],
+) -> tuple[dict[str, dict[int, dict[str, Any]]], list[dict[str, Any]]]:
+    """Walk every task contributing to a section IN DISPLAY ORDER, assigning
+    each citation a fresh section-global number starting at 1. Returns:
+
+      - per_task_remap: {task_name → {old_n → renumbered_citation_dict}}.
+        Each task's [N] markers get rewritten using its own remap.
+      - section_citations: flat list of citations in section-numbered order,
+        ready to render as footnote bullets at the end of the section.
+
+    Reading model the renumbering serves: the BDR sees [1]…[7] in one section
+    pointing to seven distinct sources. Numbers are sequential and unique
+    within a section, regardless of how many modules contributed.
+    """
+    per_task_remap: dict[str, dict[int, dict[str, Any]]] = {}
+    section_citations: list[dict[str, Any]] = []
+    next_n = 1
+    # Track URLs already seen in THIS section so the same source cited by two
+    # modules collapses to one footnote entry rather than appearing twice.
+    url_to_new_citation: dict[str, dict[str, Any]] = {}
+    for r in results_in_display_order:
+        if r.error is not None:
+            continue
+        remap: dict[int, dict[str, Any]] = {}
+        for c in sorted(r.citations or [], key=lambda x: x.get("n", 0)):
+            old_n = c.get("n")
+            url = c.get("url")
+            if not isinstance(old_n, int) or not url:
+                continue
+            existing = url_to_new_citation.get(url)
+            if existing is not None:
+                remap[old_n] = existing
+                continue
+            new_citation = {"n": next_n, "title": c.get("title", ""), "url": url}
+            remap[old_n] = new_citation
+            section_citations.append(new_citation)
+            url_to_new_citation[url] = new_citation
+            next_n += 1
+        per_task_remap[r.task_name] = remap
+    return per_task_remap, section_citations
+
+
+def _rewrite_block_citation_markers(
+    blocks: list[dict[str, Any]],
+    remap: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Walk paragraph + bulleted_list_item blocks. Any plain rich_text span
+    containing `[N]` markers is split into multiple spans, with each `[N]`
+    becoming a clickable Notion link pointing to the remapped citation URL.
+
+    Spans that already carry a link annotation pass through unchanged — this
+    keeps the orchestrator compatible with future modules that might prefer
+    to pre-render their own links. Unmatched markers (N not in remap) are
+    stripped silently; better an absent citation than a broken `[9]` to the
+    reader.
+    """
+    out: list[dict[str, Any]] = []
+    for b in blocks:
+        btype = b.get("type")
+        if btype not in ("paragraph", "bulleted_list_item", "numbered_list_item"):
+            out.append(b)
+            continue
+        inner = b.get(btype) or {}
+        rich_text = inner.get("rich_text") or []
+        new_rich: list[dict[str, Any]] = []
+        rewrote = False
+        for span in rich_text:
+            text = span.get("text") or {}
+            content = text.get("content") or ""
+            if text.get("link") or not _CITATION_MARKER_RE.search(content):
+                new_rich.append(span)
+                continue
+            rewrote = True
+            pos = 0
+            for m in _CITATION_MARKER_RE.finditer(content):
+                if m.start() > pos:
+                    new_rich.append({
+                        "type": "text",
+                        "text": {"content": content[pos:m.start()]},
+                    })
+                old_n = int(m.group(1))
+                citation = remap.get(old_n)
+                if citation:
+                    new_rich.append({
+                        "type": "text",
+                        "text": {
+                            "content": f"[{citation['n']}]",
+                            "link": {"url": citation["url"]},
+                        },
+                    })
+                pos = m.end()
+            if pos < len(content):
+                new_rich.append({
+                    "type": "text", "text": {"content": content[pos:]},
+                })
+        if rewrote:
+            new_block = dict(b)
+            new_block[btype] = {**inner, "rich_text": new_rich}
+            out.append(new_block)
+        else:
+            out.append(b)
+    return out
+
+
+def _citation_footnote_bullet(c: dict[str, Any]) -> dict[str, Any]:
+    """One footnote line: leading `[N]` is a clickable link to the URL; the
+    title is plain text appended after for human-readable context."""
+    n = c.get("n", 0)
+    url = c.get("url", "")
+    title = c.get("title", "")
+    return {
+        "object": "block", "type": "bulleted_list_item",
+        "bulleted_list_item": {
+            "rich_text": [
+                {"type": "text", "text": {"content": f"[{n}]", "link": {"url": url}}},
+                {"type": "text", "text": {"content": f" {title}" if title else ""}},
+            ],
+        },
+    }
+
+
 def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
     """Assemble page-body blocks in the prescribed section order.
 
@@ -333,15 +463,31 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
         ):
             continue
 
+        # Build a display-order list of contributors so per-section citation
+        # numbering matches the visual reading order: None-subsection first,
+        # then declared subsections. Per-signal subsections under News carry
+        # their own per-signal sources (not citations) and don't participate
+        # in this numbering.
+        display_order: list[TaskResult] = []
+        display_order.extend(grouped.get((section, None), []))
+        for sub in _SUBSECTION_ORDER.get(section, [None]):
+            if sub is None:
+                continue
+            display_order.extend(grouped.get((section, sub), []))
+        per_task_remap, section_citations = _process_section_citations(display_order)
+
         blocks.append(crm_module.heading_3(section))
 
         # First the None-subsection content (the main body of this section).
         for r in grouped.get((section, None), []):
-            blocks.extend(r.page_blocks or [])
+            remap = per_task_remap.get(r.task_name, {})
+            blocks.extend(_rewrite_block_citation_markers(r.page_blocks or [], remap))
 
         # News-only: emit a heading_3 + logic paragraph + sources per detected
         # Buying Signal. One subsection per tag the agent wrote, so each
         # signal on the property has its provenance and reasoning on the page.
+        # Per-signal subsections carry their own URL bullets directly (not
+        # part of the section citation numbering).
         if section == "News" and signal_subsections:
             for sig in signal_subsections:
                 signal_name = sig.get("signal") or "signal"
@@ -364,7 +510,14 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
                 continue
             blocks.append(crm_module.heading_3(f"{section} — {sub}"))
             for r in sub_results:
-                blocks.extend(r.page_blocks or [])
+                remap = per_task_remap.get(r.task_name, {})
+                blocks.extend(_rewrite_block_citation_markers(r.page_blocks or [], remap))
+
+        # Per-section citation footnote list, after all content, before errors.
+        if section_citations:
+            blocks.append(crm_module.paragraph("Sources:"))
+            for c in section_citations:
+                blocks.append(_citation_footnote_bullet(c))
 
         # Emit error notes for any failed tasks in this section.
         for r in section_errors:

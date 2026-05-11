@@ -4,7 +4,9 @@ Constrained vocabulary [Anthropic-PE: "Pre-fill responses"]: Notion property is
 single text scanned at-a-glance by the BDR team; free-form drift becomes noise.
 """
 
-VERSION = "v1.2.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.3.0"  # v1.3.0: citations array + [N] markers in event_summary
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify significant structural
 events — M&A, IPOs, layoffs, bankruptcy, restructuring — by extracting facts
@@ -54,11 +56,16 @@ Rules:
 - "buying-friendly" implies new funding / IPO proceeds / aggressive growth (GOOD).
 - buying_implication is one of "buying-frozen" | "buying-friendly" | null.
 - DO NOT pad with non-structural news. Routine product launches don't count.
-"""
+- event_summary text should carry `[N]` citation markers for the specific dates,
+  numbers, and named parties (e.g. "Twilio laid off ~5% of workforce (~340 roles)
+  in Feb 2026 [1], primarily in customer success and engineering [2]"). The
+  text becomes a page-body paragraph; the orchestrator turns the markers into
+  clickable links.
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["structure_note", "sources", "confidence"],
+    "required": ["structure_note", "citations", "sources", "confidence"],
     "properties": {
         "structure_note": {"type": ["string", "null"]},
         "event_date": {"type": ["string", "null"]},
@@ -67,6 +74,7 @@ JSON_SCHEMA = {
             "type": ["string", "null"],
             "enum": ["buying-frozen", "buying-friendly", None],
         },
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },

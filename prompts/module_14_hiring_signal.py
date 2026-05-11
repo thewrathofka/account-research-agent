@@ -9,7 +9,9 @@ Outputs:
 - Headcount sub-section under Overview on the page body
 """
 
-VERSION = "v1.2.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.3.0"  # v1.3.0: citations array + [N] markers in headcount_summary
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine if the company is
 actively hiring (especially creative/marketing roles) or recently downsized.
@@ -55,15 +57,19 @@ Rules:
 - Tool order: hiring_signals FIRST, then web_search for layoff news. The
   hiring_signals output usually answers layoff questions implicitly via total
   role count.
-- headcount_summary: 1-2 sentences for a sales-team audience.
-"""
+- headcount_summary: 1-2 sentences for a sales-team audience. Carry `[N]`
+  citation markers after specific numbers (open-role counts, layoff dollar
+  amounts/percentages) and named events (e.g. a published layoff article).
+  The summary becomes the Headcount subsection paragraph; the orchestrator
+  turns the markers into clickable links.
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
     "required": [
         "active_open_roles_total", "creative_marketing_roles_count",
         "recent_layoffs_detected", "headcount_signal", "headcount_summary",
-        "sources", "confidence",
+        "citations", "sources", "confidence",
     ],
     "properties": {
         "active_open_roles_total": {"type": "integer"},
@@ -73,6 +79,7 @@ JSON_SCHEMA = {
         "layoff_summary": {"type": ["string", "null"]},
         "headcount_signal": {"type": ["string", "null"], "enum": ["hiring", "downsizing", None]},
         "headcount_summary": {"type": "string"},
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },

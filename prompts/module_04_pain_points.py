@@ -30,7 +30,7 @@ Inputs that are deliberately NOT provided to this module:
   signal subsections under News already do.
 """
 
-VERSION = "v2.0.0"
+VERSION = "v2.2.0"  # v2.2.0: orchestrator handles citation rendering per-section
 
 # Curated pain-tag vocabulary. Each tag names a kind of *strategic pain* —
 # a reason the account needs creative-as-a-service. Mirrors crm.PAIN_POINT_TAG_OPTIONS
@@ -111,28 +111,59 @@ Hard rules for the narrative:
   creative"). If the research doesn't support a specific story, write a
   shorter narrative and lower confidence.
 
+Citations:
+
+Every specific factual claim in the narrative (a number, a date, a named
+event, a quoted phrase, a competitive move) MUST be backed by a citation
+marker `[N]` placed immediately after the sentence containing that claim.
+Each `[N]` references an entry in the `citations` array, numbered starting
+at 1. The page-body renderer turns each `[N]` into a clickable link to the
+cited source. General framing claims that summarise the overall picture
+do not need citations.
+
+Rules for citations:
+- `n` is a positive integer starting at 1, used at least once in the narrative.
+- `url` MUST be one of the URLs in the "Available source URLs" block of
+  the user message. DO NOT invent URLs.
+- `title` is a short human-readable label of the form `domain — claim`
+  (e.g. `cnbc.com — Oracle Q3 FY2026 earnings`). Keep under 80 chars.
+- Numbers must be sequential and contiguous (1, 2, 3, ...). No gaps.
+- Aim for 3-6 citations per narrative. More than 8 clutters the prose;
+  fewer than 2 suggests the narrative is too thin to be useful.
+- The same source can be cited multiple times in the narrative — but it
+  appears in `citations` only once, with one `n`.
+
 Output JSON in a ```json fenced block:
 
 ```json
 {{
-  "narrative": "TBAuction operates a vertical-auction marketplace in a category dominated by Meta Marketplace, eBay, and adjacent peer-to-peer selling apps. Their conversion play is education-led: they need to teach sellers in specific high-value categories (collectibles, industrial equipment, niche enthusiast goods) that auctions outperform 'list it on Marketplace' for these particular use cases — a non-obvious mental shift their target sellers haven't made yet.\\n\\nThey are simultaneously expanding into Italy, which compounds the strategic creative challenge: they have to teach the same use-case shift in a new language and cultural context where neither the company nor the auction format has the brand awareness they enjoy at home. The pain is not 'they need more banner ads' — it is that they need education-first creative at high volume across three to four content formats (product demo, comparison framing, seller success story, category-specific case), localized for Italian sellers, while keeping their home-market always-on demand-gen alive.",
+  "narrative": "TBAuction operates a vertical-auction marketplace in a category dominated by Meta Marketplace, eBay, and adjacent peer-to-peer selling apps [1]. Their conversion play is education-led: they need to teach sellers in specific high-value categories that auctions outperform 'list it on Marketplace' for those use cases — a non-obvious mental shift their target sellers haven't made yet [2].\\n\\nThey are simultaneously expanding into Italy [3], which compounds the strategic creative challenge: they have to teach the same use-case shift in a new language and cultural context where neither the company nor the auction format has the brand awareness they enjoy at home. The pain is not 'they need more banner ads' — it is education-first creative at high volume across three to four content formats, localized for Italian sellers, while keeping home-market always-on demand-gen alive [4].",
   "tags": ["audience education", "competitive displacement", "localization", "new territory", "creative production"],
-  "sources": ["https://..."],
+  "citations": [
+    {{"n": 1, "title": "tbauction.com — about", "url": "https://www.tbauction.com/..."}},
+    {{"n": 2, "title": "techcrunch.com — auction platforms 2026", "url": "https://techcrunch.com/..."}},
+    {{"n": 3, "title": "reuters.com — TBAuction Italy launch", "url": "https://www.reuters.com/..."}},
+    {{"n": 4, "title": "tbauction.com — careers page (creative roles)", "url": "https://careers.tbauction.com/..."}}
+  ],
+  "sources": ["https://www.tbauction.com/...", "https://techcrunch.com/...", "https://www.reuters.com/...", "https://careers.tbauction.com/..."],
   "confidence": "high"
 }}
 ```
 
 `confidence`:
 - "high"   = the research clearly supports a specific narrative naming
-             concrete competitive moves, growth plays, or strategic shifts.
+             concrete competitive moves, growth plays, or strategic shifts,
+             AND most factual claims are citable.
 - "medium" = some narrative material present but key pieces (growth play,
-             conversion strategy) are inferred or thin.
+             conversion strategy) are inferred or thin; some claims lack
+             specific citations.
 - "low"    = research is thin / mostly generic; narrative is short or
-             cautious. Prefer a short honest narrative + few tags over
-             padding with horoscope filler.
+             cautious. Prefer a short honest narrative + few citations
+             + few tags over padding with horoscope filler.
 
-`sources`: subset of the URLs already in the upstream module sources lists.
-Do NOT invent URLs. Empty array is fine if no specific citations apply.
+`sources`: list every URL referenced in `citations`. The base eval framework
+checks `output.sources` ⊆ tool_results_seen, so this stays as the explicit
+source list. Do NOT invent URLs.
 
 `tags`: 2-5 entries. Pick only the ones the narrative actually supports —
 better to ship 3 tight tags than 5 mushy ones.
@@ -140,13 +171,26 @@ better to ship 3 tight tags than 5 mushy ones.
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["narrative", "tags", "sources", "confidence"],
+    "required": ["narrative", "tags", "citations", "sources", "confidence"],
     "properties": {
         "narrative": {"type": "string", "minLength": 50},
         "tags": {
             "type": "array",
             "minItems": 0, "maxItems": 5,
             "items": {"type": "string", "enum": list(TAG_VOCAB.keys())},
+        },
+        "citations": {
+            "type": "array",
+            "minItems": 0, "maxItems": 12,
+            "items": {
+                "type": "object",
+                "required": ["n", "title", "url"],
+                "properties": {
+                    "n": {"type": "integer", "minimum": 1},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "url": {"type": "string"},
+                },
+            },
         },
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},

@@ -15,7 +15,9 @@ import prompts
 def test_every_prompt_module_has_version_and_system_prompt():
     """Iterate prompts/, import each module, assert it declares VERSION + SYSTEM_PROMPT."""
     for finder, name, ispkg in pkgutil.iter_modules(prompts.__path__):
-        if name.startswith("__"):
+        # Skip dunder modules + private helpers (e.g. _citations.py supplies the
+        # shared citation instructions to every prompt; it's not itself a prompt).
+        if name.startswith("__") or name.startswith("_"):
             continue
         module = importlib.import_module(f"prompts.{name}")
         assert hasattr(module, "VERSION"), f"prompts.{name} missing VERSION"

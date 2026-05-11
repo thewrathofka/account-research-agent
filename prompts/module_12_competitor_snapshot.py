@@ -1,6 +1,8 @@
 """Module 12 — Top 3 direct competitors + marketing differentiator each."""
 
-VERSION = "v1.1.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.2.0"  # v1.2.0: citations array + [N] markers in positioning_differentiator
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify the top 3 direct
 competitors and a one-line marketing differentiator for each, by extracting
@@ -12,7 +14,7 @@ Output JSON:
   "competitors": [
     {
       "name": "Competitor A",
-      "positioning_differentiator": "One sentence on what makes them different in marketing (visual style, channel mix, B2C-vs-B2B tilt, etc.)."
+      "positioning_differentiator": "One sentence on what makes them different in marketing (visual style, channel mix, B2C-vs-B2B tilt, etc.) [1]."
     },
     {
       "name": "Competitor B",
@@ -22,6 +24,9 @@ Output JSON:
       "name": "Competitor C",
       "positioning_differentiator": "..."
     }
+  ],
+  "citations": [
+    {"n": 1, "title": "competitor-a.com — about", "url": "https://..."}
   ],
   "sources": ["https://..."],
   "confidence": "medium"
@@ -33,13 +38,17 @@ Rules:
   tangential players.
 - Differentiator must be marketing-relevant (positioning, audience, channel),
   NOT a feature-list comparison.
+- Each `positioning_differentiator` should carry one or two `[N]` citation
+  markers tying the claim to a specific source. The differentiator becomes
+  a bullet under Competitor Landscape; the orchestrator turns the markers
+  into clickable links.
 - Exactly 3 competitors. If fewer than 3 are clearly direct, fill with the
   closest matches and set confidence="low".
-"""
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["competitors", "sources", "confidence"],
+    "required": ["competitors", "citations", "sources", "confidence"],
     "properties": {
         "competitors": {
             "type": "array",
@@ -53,6 +62,7 @@ JSON_SCHEMA = {
                 },
             },
         },
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },

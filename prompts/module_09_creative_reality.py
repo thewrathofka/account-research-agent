@@ -8,7 +8,9 @@ Tools: hiring_signals (jobspy) + web_search.
 Output: Creative Posture page section.
 """
 
-VERSION = "v1.2.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.3.0"  # v1.3.0: citations array + [N] markers in creative_posture_summary
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Build a short profile of
 the company's *creative posture* — how they currently produce creative work
@@ -53,18 +55,21 @@ Rules:
 - named_agencies: only confirmed via press or company-claimed partnership.
   Empty list is fine.
 - creative_posture_summary: 3-5 sentences for a Superside AE — explain WHY this
-  company might buy creative production at scale.
-"""
+  company might buy creative production at scale. Carry `[N]` citation markers
+  after specific named agencies, role counts, and quoted JD phrases. The
+  summary becomes a page-body paragraph; markers become clickable links.
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
     "required": ["creative_role_count", "jd_pain_phrases", "named_agencies",
-                 "creative_posture_summary", "sources", "confidence"],
+                 "creative_posture_summary", "citations", "sources", "confidence"],
     "properties": {
         "creative_role_count": {"type": "integer"},
         "jd_pain_phrases": {"type": "array", "items": {"type": "string"}},
         "named_agencies": {"type": "array", "items": {"type": "string"}},
         "creative_posture_summary": {"type": "string"},
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },

@@ -112,11 +112,14 @@ class Module04PainPoints(Task):
         }
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
-        """Emit narrative paragraphs + one final tag bullet.
+        """Emit narrative paragraphs + one tag bullet.
 
-        The narrative may contain blank-line-separated paragraphs — split on
-        double newlines and emit each as its own paragraph block so Notion
-        renders them with breathing room rather than as one giant wall.
+        The narrative may contain `[N]` citation markers as plain text — the
+        orchestrator's per-section citation pass renumbers them and rewrites
+        each marker into a clickable Notion link span pointing to the cited
+        URL. The orchestrator also appends a single section-wide footnote
+        bullet list at the end of `Possible Pain Points`, so this method does
+        NOT emit footnotes itself (single source of truth).
         """
         narrative = (output.get("narrative") or "").strip()
         if not narrative:

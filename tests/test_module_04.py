@@ -28,7 +28,7 @@ def test_tag_vocab_has_kalis_tbauction_examples() -> None:
 # ---- prompt + schema ----
 
 def test_prompt_metadata() -> None:
-    assert prompt.VERSION == "v2.0.0"
+    assert prompt.VERSION.startswith("v2.")
     # System prompt must forbid the v1.x failure modes.
     sys_text = prompt.SYSTEM_PROMPT.lower()
     assert "cold-email" in sys_text or "cold email" in sys_text
@@ -40,17 +40,23 @@ def test_schema_accepts_valid_narrative_output() -> None:
     sample = {
         "narrative": (
             "TBAuction operates an auction marketplace in a category dominated "
-            "by Meta Marketplace. Their conversion play is teaching sellers "
+            "by Meta Marketplace [1]. Their conversion play is teaching sellers "
             "in specific categories that auctions outperform 'list it on "
-            "Marketplace' for high-value goods.\n\nThey are expanding into "
-            "Italy, compounding the creative challenge — education-first "
+            "Marketplace' for high-value goods [2].\n\nThey are expanding into "
+            "Italy [3], compounding the creative challenge — education-first "
             "creative across product demos, comparison framing, and seller "
             "success stories, localized for Italian sellers, while keeping "
             "home-market demand-gen alive."
         ),
         "tags": ["audience education", "competitive displacement", "localization",
                  "new territory", "creative production"],
-        "sources": ["https://example.com/tbauction"],
+        "citations": [
+            {"n": 1, "title": "tbauction.com — about", "url": "https://www.tbauction.com/about"},
+            {"n": 2, "title": "techcrunch.com — auction platforms", "url": "https://techcrunch.com/x"},
+            {"n": 3, "title": "reuters.com — Italy launch", "url": "https://reuters.com/y"},
+        ],
+        "sources": ["https://www.tbauction.com/about", "https://techcrunch.com/x",
+                    "https://reuters.com/y"],
         "confidence": "high",
     }
     jsonschema.validate(sample, prompt.JSON_SCHEMA)
@@ -60,6 +66,7 @@ def test_schema_rejects_unknown_tag() -> None:
     bad = {
         "narrative": "x" * 60,
         "tags": ["audience education", "vibes_based_tag"],  # second is not in enum
+        "citations": [],
         "sources": [],
         "confidence": "medium",
     }
@@ -71,6 +78,7 @@ def test_schema_rejects_empty_narrative() -> None:
     bad = {
         "narrative": "",
         "tags": ["strategy"],
+        "citations": [],
         "sources": [],
         "confidence": "low",
     }
@@ -83,6 +91,7 @@ def test_schema_rejects_too_many_tags() -> None:
         "narrative": "x" * 60,
         "tags": ["creative production", "localization", "new territory",
                  "strategy", "audience education", "competitive displacement"],
+        "citations": [],
         "sources": [],
         "confidence": "high",
     }
@@ -95,10 +104,23 @@ def test_schema_accepts_zero_tags() -> None:
     sample = {
         "narrative": "x" * 60,
         "tags": [],
+        "citations": [],
         "sources": [],
         "confidence": "low",
     }
     jsonschema.validate(sample, prompt.JSON_SCHEMA)
+
+
+def test_schema_rejects_citation_missing_url() -> None:
+    bad = {
+        "narrative": "x" * 60,
+        "tags": [],
+        "citations": [{"n": 1, "title": "no url here"}],  # url required
+        "sources": [],
+        "confidence": "low",
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, prompt.JSON_SCHEMA)
 
 
 # ---- task class ----
@@ -148,9 +170,10 @@ def test_task_to_blocks_emits_paragraphs_then_tag_bullet() -> None:
     out = {
         "narrative": "Paragraph one about positioning.\n\nParagraph two about growth.",
         "tags": ["strategy", "new territory"],
+        "citations": [],
     }
     blocks = task.to_blocks(out)
-    # 2 paragraphs + 1 tag bullet = 3
+    # 2 paragraphs + 1 tag bullet = 3 (no citations → no footnote section)
     assert len(blocks) == 3
     assert blocks[0]["type"] == "paragraph"
     assert blocks[1]["type"] == "paragraph"
@@ -162,6 +185,47 @@ def test_task_to_blocks_emits_paragraphs_then_tag_bullet() -> None:
     tag_line = blocks[2]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
     assert tag_line.startswith("Pain tags:")
     assert "strategy" in tag_line and "new territory" in tag_line
+
+
+def test_to_blocks_keeps_citation_markers_as_plain_text() -> None:
+    """Module 4 emits `[N]` markers as plain text — the orchestrator handles
+    renumbering + link rendering per-section. The task itself stays simple."""
+    task = Module04PainPoints()
+    out = {
+        "narrative": "Oracle is shifting toward AI infrastructure [1]. Their conversion play targets hyperscaler clients [2].",
+        "tags": [],
+        "citations": [
+            {"n": 1, "title": "cnbc.com — Q3 FY26", "url": "https://www.cnbc.com/oracle-q3"},
+            {"n": 2, "title": "axios.com — OCI AI", "url": "https://www.axios.com/oci-ai"},
+        ],
+    }
+    blocks = task.to_blocks(out)
+    # Just the narrative paragraph — no per-module footnote (orchestrator owns it).
+    assert len(blocks) == 1
+    para_rich = blocks[0]["paragraph"]["rich_text"]
+    assert len(para_rich) == 1, "to_blocks emits plain text; the orchestrator splits + links"
+    content = para_rich[0]["text"]["content"]
+    assert "[1]" in content and "[2]" in content
+    assert "link" not in para_rich[0]["text"]
+
+
+def test_to_blocks_omits_footnote_bullets_module_side() -> None:
+    """Module 4 must not emit its own footnote bullets — the orchestrator
+    handles per-section citation footnotes, so duplicating here would render
+    the bullets twice on the page."""
+    task = Module04PainPoints()
+    out = {
+        "narrative": "Claim with [1] and [2].",
+        "tags": [],
+        "citations": [
+            {"n": 1, "title": "a", "url": "https://example.com/a"},
+            {"n": 2, "title": "b", "url": "https://example.com/b"},
+        ],
+    }
+    blocks = task.to_blocks(out)
+    types = [b["type"] for b in blocks]
+    # Should be: just the narrative paragraph. No footnote-style bullets.
+    assert types == ["paragraph"]
 
 
 def test_task_to_blocks_drops_unknown_tags_from_bullet() -> None:

@@ -64,6 +64,12 @@ class TaskResult:
     # Each item: {"signal": <PROP_BUYING_SIGNALS option>, "logic": str, "sources": list[str]}.
     # Only modules that contribute to PROP_BUYING_SIGNALS populate this.
     signal_sections: list[dict[str, Any]] = field(default_factory=list)
+    # Citations the model emitted alongside narrative text. Each item:
+    # {"n": int, "title": str, "url": str}. The model places module-local `[N]`
+    # markers inline in page-block text; the orchestrator re-numbers citations
+    # globally per page-body section and rewrites the markers to be clickable
+    # Notion link spans (see orchestrator._rewrite_block_citation_markers).
+    citations: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
 
 
@@ -244,7 +250,34 @@ class Task:
             model_used=result.model_used,
             tool_results_seen=observed_urls,
             signal_sections=signal_sections,
+            citations=_extract_citations(output),
         )
+
+
+def _extract_citations(output: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pull a well-formed citations array out of the model output.
+
+    Each citation must be a dict with integer `n`, non-empty `url`, and string
+    `title`. Anything malformed is silently dropped (the model occasionally
+    half-writes a citation; we'd rather lose one than fail the whole task).
+    """
+    raw = output.get("citations") or []
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for c in raw:
+        if not isinstance(c, dict):
+            continue
+        n = c.get("n")
+        url = c.get("url")
+        if not isinstance(n, int) or not isinstance(url, str) or not url:
+            continue
+        out.append({
+            "n": n,
+            "title": str(c.get("title") or ""),
+            "url": url,
+        })
+    return out
 
 
 def _collect_observed_urls(tools: list[Tool]) -> list[str]:

@@ -18,7 +18,9 @@ the model echoes those buckets back unchanged):
 - high:   51+
 """
 
-VERSION = "v1.0.0"
+from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
+
+VERSION = "v1.1.0"  # v1.1.0: citations array + [N] markers in per-platform notes
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Look up which ads the
 company is currently running across LinkedIn, Meta, and TikTok ad libraries,
@@ -103,11 +105,16 @@ Rules:
                errors on any required platform, or you cannot classify confidently
 - If the tool returns "NOT CONFIGURED", do NOT make up ad counts — set every
   platform's ads_running=0 and confidence="low".
-"""
+- Each `note` should carry `[N]` citation markers when it references a specific
+  sample ad URL the scraper returned (e.g. "Heavily video-dominant creative
+  posture — 83% of active ads are video [1]"). The note becomes a bullet
+  under Creative Posture → Ads Running; the orchestrator rewrites the marker
+  into a clickable link to the actual ad-library detail page.
+""" + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["audience_classification", "platforms", "sources", "confidence"],
+    "required": ["audience_classification", "platforms", "citations", "sources", "confidence"],
     "properties": {
         "audience_classification": {
             "type": "object",
@@ -149,6 +156,7 @@ JSON_SCHEMA = {
                 },
             },
         },
+        "citations": CITATIONS_SCHEMA_FRAGMENT,
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
     },
