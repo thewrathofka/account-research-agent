@@ -14,6 +14,7 @@ from tasks.module_05 import Module05CorporateStructure
 from tasks.module_06 import Module06StructuralNews
 from tasks.module_07 import Module07TriggerEvents
 from tasks.module_09 import Module09CreativeReality
+from tasks.module_10 import Module10AdLibrary
 from tasks.module_12 import Module12CompetitorSnapshot
 from tasks.module_13 import Module13IndustryPulse
 from tasks.module_14 import Module14HiringSignal
@@ -29,6 +30,7 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "module_06_structural_news": Module06StructuralNews,
     "module_07_trigger_events": Module07TriggerEvents,
     "module_09_creative_reality": Module09CreativeReality,
+    "module_10_ad_library": Module10AdLibrary,
     "module_12_competitor_snapshot": Module12CompetitorSnapshot,
     "module_13_industry_pulse": Module13IndustryPulse,
     "module_14_hiring_signal": Module14HiringSignal,
@@ -48,6 +50,23 @@ PHASE1_TASKS = [
     "module_06_structural_news",
     "module_07_trigger_events",
     "module_09_creative_reality",
+    "module_12_competitor_snapshot",
+    "module_13_industry_pulse",
+    "module_14_hiring_signal",
+]
+
+# Phase 2 — adds module 10 (ad library) and (eventually) module 4 (pain points).
+# Module 10 runs AFTER module 9 so the creative-posture context (in-house signal +
+# named agencies) is in the envelope when it classifies audience.
+PHASE2_TASKS = [
+    "module_01_gate",
+    "research_pass",
+    "module_03_revenue_model",
+    "module_05_corporate_structure",
+    "module_06_structural_news",
+    "module_07_trigger_events",
+    "module_09_creative_reality",
+    "module_10_ad_library",
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
     "module_14_hiring_signal",

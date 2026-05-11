@@ -1,0 +1,19 @@
+{
+  "company_name": "Moody's Corporation",
+  "notes": "Module 10 regression golden — pure B2B financial-services audience (banks, insurers, institutional investors). LinkedIn should be the only platform queried; Meta and TikTok must be 'not applicable' with ads_running=0. Tests the cost-gating rules in the prompt: if these were ignored the agent would waste a $0.65/1k Meta scrape on every B2B account.",
+  "module_10_ad_library": {
+    "expected": {
+      "audience_classification": {
+        "primary": "B2B",
+        "is_gen_z_lifestyle": false
+      },
+      "platforms": [
+        {"platform": "linkedin"},
+        {"platform": "meta", "ads_running": 0, "volume": "none"},
+        {"platform": "tiktok", "ads_running": 0, "volume": "none"}
+      ],
+      "confidence": "medium"
+    },
+    "expected_confidence": "medium"
+  }
+}

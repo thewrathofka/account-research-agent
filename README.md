@@ -37,7 +37,12 @@ python account_research_agent.py --since 30 \
 | `TAVILY_API_KEY` | always | https://app.tavily.com/home |
 | `NOTION_API_KEY` | always | https://www.notion.so/profile/integrations |
 | `NOTION_DATABASE_ID` | always | the All Accounts DB ID |
+| `APIFY_API_KEY` | optional — required only for `module_10_ad_library` | https://console.apify.com/account/integrations |
 | `PROVIDER` | optional | `anthropic` (default) \| `openai` \| `gemini` |
+
+If `APIFY_API_KEY` is absent, module 10 degrades gracefully: it returns
+`ads_running=0` per platform with `confidence="low"` and a "not configured"
+note, so the rest of the pipeline keeps shipping.
 
 ## Swapping LLM providers
 
@@ -81,6 +86,7 @@ or `providers/openai_provider.py` and translate to Gemini's `functionCall` /
 | `module_12_competitor_snapshot` | Top 3 direct competitors | Page-body Competitor Landscape |
 | `module_13_industry_pulse` | Recent category-level stories | Adds to Competitor Landscape; `Buying Intent: industry movement` |
 | `module_14_hiring_signal` | Active hiring (creative/marketing) or layoffs | `Buying Signals: hiring` or `downsizing`; Headcount sub-section |
+| `module_10_ad_library` *(Phase 2)* | Ads running on LinkedIn (always) + Meta / TikTok (gated by audience) | Page-body `Creative Posture → Ads Running` bullets, per-platform count + format mix + volume |
 
 Page-body sections are always assembled in this order:
 **Overview → Possible Pain Points → News → Creative Posture → Competitor Landscape → Sources**
@@ -182,12 +188,12 @@ Tools-only (excluding LLM tokens):
 LLM tokens add roughly $0.10–0.30/account on Anthropic Sonnet 4.5; ~$0.05–0.15
 on OpenAI gpt-4.1.
 
-## Phase 2 (not in scope for v0.1.0)
+## Phase 2
 
-- Module 4 (pain-point synthesis from modules 1, 3, 9, 10, 14 outputs)
-- Module 10 (ad library — LinkedIn always; Meta/TikTok gated by classification)
-- Apify integration for ad-library scrapers
-- Cross-provider eval comparison run
+- ✅ Module 10 (ad library — LinkedIn always; Meta/TikTok gated by audience classification) — shipped 2026-05-11
+- ✅ Apify integration with cost gates + graceful degrade (`APIFY_API_KEY` optional) — shipped 2026-05-11
+- Module 4 (pain-point synthesis from modules 1, 3, 9, 10, 14 outputs) — Phase 2b
+- Cross-provider eval comparison run on the full pipeline
 
 ## Phase 3 (handoff hardening)
 

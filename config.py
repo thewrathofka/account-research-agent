@@ -20,6 +20,9 @@ BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")            # required iff SEARCH_BACK
 JINA_API_KEY = os.getenv("JINA_API_KEY", "")          # optional — Jina Reader works without a key on free tier
 NOTION_API_KEY = os.getenv("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID")
+# Apify is optional — module 10 (ad library) degrades gracefully to "not
+# configured" output when absent so the rest of the pipeline keeps working.
+APIFY_API_KEY = os.getenv("APIFY_API_KEY")
 
 # Search backend: "tavily" (default, current) | "brave" | "brave_jina"
 SEARCH_BACKEND = os.getenv("SEARCH_BACKEND", "tavily")
@@ -85,6 +88,11 @@ MAX_AGENT_ITERATIONS = 10
 # ---- Concurrency + cost gates ----
 DEFAULT_CONCURRENCY = 5
 TAVILY_SEARCHES_PER_TASK_CAP = 8
+# Module 10 calls one platform per scrape; cap = 3 covers LinkedIn (always),
+# Meta (gated), TikTok (gated). MAX_APIFY_RESULTS_PER_PLATFORM bounds per-call
+# cost — Meta scraper is ~$0.65/1k results so 50 caps that at ~$0.03/scrape.
+APIFY_CALLS_PER_TASK_CAP = 3
+MAX_APIFY_RESULTS_PER_PLATFORM = 50
 
 # Per-task and per-account cost budgets in USD (Fix Appendix #19).
 # Numbers reflect Sonnet-4.5 + Haiku-4.5 pricing observed in v0.3.0 baseline.
@@ -100,8 +108,9 @@ MAX_COST: dict[str, float] = {
     "module_12_competitor_snapshot": 0.02,
     "module_13_industry_pulse": 0.02,
     "module_14_hiring_signal": 0.05,
+    "module_10_ad_library": 0.06,  # Phase 2 — token cost; Apify tool cost separate
     "company_overview": 0.04,
-    "_account_total": 0.30,  # ceiling per account across all tasks
+    "_account_total": 0.35,  # ceiling per account across all tasks (bumped for module 10)
 }
 COST_REGRESSION_OVERAGE = 0.20  # 20% headroom before failing the eval
 
