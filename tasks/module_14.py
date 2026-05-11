@@ -1,7 +1,14 @@
-"""Module 14 — Hiring/downsizing signal.
+"""Module 14 — Hiring/downsizing signal (v1.4.0 adds ATS direct read).
 
-Tools: hiring_signals (jobspy) + web_search (Tavily).
-Output: Buying Signals multi-select + Headcount page sub-section under Overview.
+Tools:
+  - hiring_signals (jobspy) — secondary boards (Indeed/LinkedIn/Glassdoor/ZR)
+  - ats_jobs (Greenhouse public API) — primary ATS, 3-5x richer for B2B SaaS
+  - web_search (Tavily) — layoff news
+
+Outputs:
+  - Buying Signals multi-select tag (hiring | downsizing)
+  - Headcount subsection paragraph + important-role bullets
+  - signal_section under News for the Buying Signal tag
 """
 
 from __future__ import annotations
@@ -11,9 +18,18 @@ from typing import Any
 import crm
 import prompts.module_14_hiring_signal as prompt
 from tasks.base import Task, _today_header
+from tools.ats_fetcher import ATSFetcherTool
 from tools.base import Tool
 from tools.hiring_signals import HiringSignalsTool
 from tools import build_search_tool
+
+
+# Short labels for the ATS-fetcher tier IDs — readable on the page body.
+_TIER_LABEL = {
+    "tier_1_marketing_ai": "marketing + AI",
+    "tier_2_senior_leadership": "senior leadership",
+    "tier_3_senior_creative_ic": "senior creative IC",
+}
 
 
 class Module14HiringSignal(Task):
@@ -23,7 +39,7 @@ class Module14HiringSignal(Task):
     prompt_module = prompt
 
     def build_tools(self) -> list[Tool]:
-        return [HiringSignalsTool(), build_search_tool()]
+        return [HiringSignalsTool(), ATSFetcherTool(), build_search_tool()]
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Inject gate output so the model skips redundant searches AND uses
@@ -55,9 +71,15 @@ class Module14HiringSignal(Task):
             f"{prior_block}"
             f"When you call hiring_signals, pass countries={regions} to scrape "
             f"each market the company operates in ({regions_str}). "
-            f"Focus your searches on active hiring (creative/marketing roles) "
-            f"and very-recent layoff news (call web_search with days=90, fall "
-            f"back to days=180 only if no 90-day result)."
+            f"Then call ats_jobs (provider='greenhouse') — look at the company's "
+            f"careers page to find the Greenhouse slug if you can; pass it as "
+            f"`ats_slug=<slug>`. If you can't find a slug, call ats_jobs without "
+            f"one and the tool will try heuristics from the company name. "
+            f"ATS data typically returns 3-5× more roles than hiring_signals "
+            f"for B2B SaaS and includes important-role open/close diffing. "
+            f"Only call web_search for layoff news if the layoff context isn't "
+            f"already clear from the prior structural-news context above "
+            f"(use days=90, fall back to days=180 only if no 90-day result)."
         )
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
@@ -71,10 +93,45 @@ class Module14HiringSignal(Task):
         return {}
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
+        """Headcount subsection: summary paragraph, then highlight bullets for
+        any important roles that are open or recently closed. The summary
+        carries `[N]` citation markers; the orchestrator rewrites them into
+        clickable links per the per-section citation pass."""
         summary = output.get("headcount_summary")
         if not summary:
             return []
-        return [crm.paragraph(summary)]
+        blocks: list[dict[str, Any]] = [crm.paragraph(summary)]
+
+        important_open = output.get("important_roles_open") or []
+        important_closed = output.get("important_roles_recently_closed") or []
+
+        if important_open:
+            blocks.append(crm.paragraph(
+                f"Important roles currently open ({len(important_open)}):"
+            ))
+            for r in important_open[:10]:
+                title = r.get("title", "?")
+                loc = r.get("location") or ""
+                tier = r.get("tier", "")
+                tier_label = _TIER_LABEL.get(tier, tier or "important")
+                loc_suffix = f" — {loc}" if loc else ""
+                blocks.append(crm.bullet(
+                    f"{title} [{tier_label}]{loc_suffix}"
+                ))
+
+        if important_closed:
+            blocks.append(crm.paragraph(
+                f"Important roles closed since previous research run "
+                f"({len(important_closed)}) — recent closure may indicate the "
+                f"team is now in place and ramping creative/marketing investment:"
+            ))
+            for r in important_closed[:10]:
+                title = r.get("title", "?")
+                tier = r.get("tier", "")
+                tier_label = _TIER_LABEL.get(tier, tier or "important")
+                blocks.append(crm.bullet(f"{title} [{tier_label}]"))
+
+        return blocks
 
     def to_signal_sections(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         signal = output.get("headcount_signal")

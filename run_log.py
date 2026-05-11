@@ -55,6 +55,22 @@ CREATE TABLE IF NOT EXISTS tool_call_cache (
 );
 CREATE INDEX IF NOT EXISTS idx_tool_cache_lookup
     ON tool_call_cache(tool_name, args_hash, expires_at);
+
+-- Phase 2c (2026-05-11): one row per ATS fetch. ATSFetcherTool diffs the
+-- latest snapshot for a given (company, provider) against the current scrape
+-- to surface roles that closed between runs — closures of marketing/creative
+-- roles are buying signals too.
+CREATE TABLE IF NOT EXISTS ats_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    slug TEXT,
+    snapshot_at TEXT NOT NULL,
+    titles_json TEXT NOT NULL,    -- JSON array of role titles (canonical strings)
+    jobs_json TEXT NOT NULL       -- full role records for richer follow-up diffs
+);
+CREATE INDEX IF NOT EXISTS idx_ats_snapshots_lookup
+    ON ats_snapshots(company_name, provider, snapshot_at DESC);
 """
 
 # Columns added in Phase 1 — old DBs need ALTER TABLE migration.
@@ -262,6 +278,71 @@ class ToolCallCache:
                 (now,),
             ).fetchone()[0]
         return {"total": total, "fresh": fresh, "expired": total - fresh}
+
+
+class ATSSnapshotStore:
+    """Persistent store for ATS open-role snapshots, keyed by (company, provider).
+
+    Each fetch appends a new row; `load_latest` returns the most recent prior
+    snapshot so the ATSFetcherTool can diff and surface roles that closed
+    between runs (a closure of an important marketing/creative role is a
+    buying signal — see tools/ats_fetcher.py).
+    """
+
+    def __init__(self, path: str | Path = "runs.db"):
+        self.path = Path(path)
+        with _open_conn(self.path) as c:
+            c.executescript(_SCHEMA)
+
+    def store(
+        self,
+        *,
+        company: str,
+        provider: str,
+        slug: str | None,
+        jobs: list[dict[str, Any]],
+    ) -> None:
+        titles = [j.get("title", "") for j in jobs if j.get("title")]
+        with _open_conn(self.path) as c:
+            c.execute(
+                """INSERT INTO ats_snapshots
+                   (company_name, provider, slug, snapshot_at, titles_json, jobs_json)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (company, provider, slug, iso_now(),
+                 json.dumps(titles, ensure_ascii=False),
+                 json.dumps(jobs, ensure_ascii=False, default=str)),
+            )
+
+    def load_latest(
+        self, *, company: str, provider: str,
+    ) -> dict[str, Any] | None:
+        """Return the most recent snapshot for the (company, provider) pair, or
+        None if no prior snapshot exists. Decodes `titles` back to a Python list."""
+        with _open_conn(self.path) as c:
+            row = c.execute(
+                """SELECT id, slug, snapshot_at, titles_json, jobs_json
+                   FROM ats_snapshots
+                   WHERE company_name = ? AND provider = ?
+                   ORDER BY id DESC LIMIT 1""",
+                (company, provider),
+            ).fetchone()
+        if row is None:
+            return None
+        _id, slug, snapshot_at, titles_json, jobs_json = row
+        try:
+            titles = json.loads(titles_json) if titles_json else []
+        except json.JSONDecodeError:
+            titles = []
+        try:
+            jobs = json.loads(jobs_json) if jobs_json else []
+        except json.JSONDecodeError:
+            jobs = []
+        return {
+            "slug": slug,
+            "snapshot_at": snapshot_at,
+            "titles": titles,
+            "jobs": jobs,
+        }
 
 
 def serialize_output(output: Any) -> str | None:
