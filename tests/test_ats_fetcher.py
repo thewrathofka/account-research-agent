@@ -15,6 +15,7 @@ from tools.ats_fetcher import (
     IMPORTANT_TITLE_PATTERNS,
     _slug_heuristics,
     classify_important_title,
+    is_in_scope_location,
 )
 
 
@@ -119,6 +120,66 @@ def test_slug_heuristics_empty() -> None:
     assert _slug_heuristics("") == []
 
 
+# ---- location classifier ----
+
+@pytest.mark.parametrize(
+    "loc,expected",
+    [
+        # NA
+        ("Remote - United States", True),
+        ("New York, New York, United States", True),
+        ("San Francisco, California, USA", True),
+        ("Toronto, Ontario, Canada", True),
+        # UK
+        ("London, Greater London, England, United Kingdom", True),
+        ("Remote - United Kingdom", True),
+        ("Edinburgh, Scotland", True),
+        # EU
+        ("Helsinki, Uusimaa, Finland", True),
+        ("Berlin, Germany", True),
+        ("Dublin, Ireland", True),
+        ("Amsterdam, Netherlands", True),
+        # Bare in-scope city
+        ("New York", True),
+        ("Chicago", True),
+        ("London", True),
+        ("Berlin", True),
+        ("Helsinki", True),
+        # Out-of-scope
+        ("Bengaluru", False),
+        ("Bangalore", False),
+        ("Mumbai", False),
+        ("Pune", False),
+        ("Remote - India", False),
+        ("Delhi", False),
+        ("Sydney, Australia", False),
+        ("Singapore", False),
+        ("Tel Aviv, Israel", False),
+        ("São Paulo, Brazil", False),
+        # Ambiguous / unknown
+        ("", None),
+        (None, None),
+        ("TBD", None),
+        ("Remote", None),  # no country qualifier
+        # Avoid false positives — "india" substring inside "Indiana" must not
+        # flip the location to OUT-OF-SCOPE. (Without a country qualifier we
+        # can't confirm in-scope either, so this is correctly None — but the
+        # critical thing is it's NOT False.)
+        ("Indiana", None),
+    ],
+)
+def test_is_in_scope_location(loc: Any, expected: Any) -> None:
+    assert is_in_scope_location(loc) is expected
+
+
+def test_is_in_scope_multi_segment_in_scope_wins() -> None:
+    """A location string like 'Chicago; New York, NY, United States' should be
+    in-scope because at least one segment resolves to in-scope."""
+    assert is_in_scope_location(
+        "Chicago; New York, New York, United States"
+    ) is True
+
+
 # ---- ATSFetcherTool ----
 
 class _FakeResponse:
@@ -150,13 +211,13 @@ def test_tool_call_surfaces_important_open_roles(tmp_path: Any) -> None:
     fake_jobs = [
         {"title": "Marketing AI & Transformation Strategy Lead",
          "absolute_url": "https://example.com/1",
-         "location": {"name": "Remote - US"}},
+         "location": {"name": "Remote - United States"}},
         {"title": "Senior Backend Engineer",  # should NOT be flagged
          "absolute_url": "https://example.com/2",
-         "location": {"name": "NYC"}},
+         "location": {"name": "New York, New York, United States"}},
         {"title": "Senior Motion Designer",
          "absolute_url": "https://example.com/3",
-         "location": {"name": "Remote - US"}},
+         "location": {"name": "Remote - United States"}},
     ]
     tool = ATSFetcherTool(snapshot_store=ATSSnapshotStore(path=db))
     with patch("tools.ats_fetcher.httpx.get",
@@ -164,14 +225,49 @@ def test_tool_call_surfaces_important_open_roles(tmp_path: Any) -> None:
         result = tool(company="TestCo", ats_slug="testco")
     assert "Marketing AI & Transformation Strategy Lead" in result
     assert "Senior Motion Designer" in result
-    # The non-important Backend Engineer must NOT appear in the
-    # "Important roles currently open" section (it'll appear in the full
-    # title list below). Test that the important-open section has 2 items.
     important_section = result.split("Important roles currently open")[1]
     important_section = important_section.split("Important roles closed")[0]
     assert "[tier_1_marketing_ai]" in important_section
     assert "[tier_3_senior_creative_ic]" in important_section
     assert "Backend Engineer" not in important_section
+    # v1.5.0 — in-scope vs out-of-scope counts surfaced in the heading.
+    assert "in UK/EU/NA" in important_section
+    # Both important roles are Remote-US → IN-SCOPE
+    assert "[IN-SCOPE]" in important_section
+
+
+def test_tool_marks_out_of_scope_roles(tmp_path: Any) -> None:
+    """Important roles in India should be flagged OUT-OF-SCOPE so the model
+    knows not to count them toward the `hiring` Buying Signal."""
+    from run_log import ATSSnapshotStore
+    db = tmp_path / "test.db"
+    fake_jobs = [
+        # US senior designer — IN-SCOPE
+        {"title": "Senior Motion Designer",
+         "absolute_url": "https://example.com/1",
+         "location": {"name": "Remote - United States"}},
+        # India senior product designer — OUT-OF-SCOPE
+        {"title": "Senior Product Designer",
+         "absolute_url": "https://example.com/2",
+         "location": {"name": "Bengaluru"}},
+        # India tier-1 marketing+AI role — OUT-OF-SCOPE (still important, just
+        # doesn't trigger the hiring signal for Superside GTM).
+        {"title": "Marketing AI Lead",
+         "absolute_url": "https://example.com/3",
+         "location": {"name": "Pune"}},
+    ]
+    tool = ATSFetcherTool(snapshot_store=ATSSnapshotStore(path=db))
+    with patch("tools.ats_fetcher.httpx.get",
+               side_effect=_mock_greenhouse_response(fake_jobs)):
+        result = tool(company="TestCo", ats_slug="testco")
+    important_section = result.split("Important roles currently open")[1]
+    important_section = important_section.split("Important roles closed")[0]
+    # All three are important. One in-scope, two out-of-scope.
+    assert "1 in UK/EU/NA" in important_section
+    assert "2 elsewhere" in important_section
+    # Rule reminder is rendered for the model.
+    assert "OUT-OF-SCOPE" in important_section
+    assert "do NOT trigger the signal" in important_section
 
 
 def test_tool_detects_closed_important_roles(tmp_path: Any) -> None:

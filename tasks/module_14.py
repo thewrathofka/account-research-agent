@@ -106,17 +106,31 @@ class Module14HiringSignal(Task):
         important_closed = output.get("important_roles_recently_closed") or []
 
         if important_open:
+            in_scope_count = sum(1 for r in important_open if r.get("in_scope") is True)
+            oos_count = sum(1 for r in important_open if r.get("in_scope") is False)
+            unk_count = sum(1 for r in important_open if r.get("in_scope") is None)
+            mix_label = (
+                f"{in_scope_count} in UK/EU/NA"
+                + (f", {oos_count} elsewhere" if oos_count else "")
+                + (f", {unk_count} unknown location" if unk_count else "")
+            )
             blocks.append(crm.paragraph(
-                f"Important roles currently open ({len(important_open)}):"
+                f"Important roles currently open ({len(important_open)} — {mix_label}):"
             ))
             for r in important_open[:10]:
                 title = r.get("title", "?")
                 loc = r.get("location") or ""
                 tier = r.get("tier", "")
                 tier_label = _TIER_LABEL.get(tier, tier or "important")
+                in_scope = r.get("in_scope")
+                scope_marker = (
+                    "" if in_scope is True
+                    else " · out-of-scope" if in_scope is False
+                    else " · location TBD"
+                )
                 loc_suffix = f" — {loc}" if loc else ""
                 blocks.append(crm.bullet(
-                    f"{title} [{tier_label}]{loc_suffix}"
+                    f"{title} [{tier_label}{scope_marker}]{loc_suffix}"
                 ))
 
         if important_closed:
@@ -138,17 +152,31 @@ class Module14HiringSignal(Task):
         if signal not in ("hiring", "downsizing"):
             return []
         if signal == "hiring":
-            roles = output.get("creative_marketing_roles_count")
+            global_roles = output.get("creative_marketing_roles_count")
+            in_scope_roles = output.get("creative_marketing_roles_in_scope_count", global_roles)
             total = output.get("active_open_roles_total")
             titles = output.get("creative_marketing_role_titles") or []
             titles_blurb = (
                 f" Notable open roles: {', '.join(titles[:5])}." if titles else ""
             )
+            # Build the count phrasing — when global and in-scope differ
+            # materially, surface both so the BDR knows the geographic
+            # concentration (UK+EU+NA is the addressable footprint).
+            if isinstance(global_roles, int) and isinstance(in_scope_roles, int) \
+                    and global_roles > in_scope_roles:
+                count_phrase = (
+                    f"{in_scope_roles} of {global_roles} creative/marketing role(s) "
+                    f"open in UK/EU/NA out of {total} total globally"
+                )
+            else:
+                count_phrase = (
+                    f"{in_scope_roles or global_roles} creative/marketing role(s) "
+                    f"open in UK/EU/NA out of {total} total"
+                )
             logic = (
-                f"Active hiring detected. "
-                f"{roles} creative/marketing role(s) open out of {total} total "
-                f"across the company's operating regions — above the threshold "
-                f"(>=3) that flags a hiring posture.{titles_blurb}"
+                f"Active hiring detected in UK/EU/NA — {count_phrase}, "
+                f"above the threshold (>=3 in-scope) that flags a hiring "
+                f"posture.{titles_blurb}"
             )
         else:  # downsizing
             layoff_summary = output.get("layoff_summary") or output.get("headcount_summary") or ""

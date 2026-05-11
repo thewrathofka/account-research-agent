@@ -11,7 +11,7 @@ Outputs:
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.4.0"  # v1.4.0: ATS direct read + important-role open/close detection
+VERSION = "v1.5.0"  # v1.5.0: location-aware hiring signal (UK+EU+NA only triggers `hiring`)
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine if the company is
 actively hiring (especially creative/marketing roles) or recently downsized,
@@ -72,45 +72,79 @@ Output JSON:
 ```
 
 Rules:
-- active_open_roles_total and creative_marketing_roles_count: single integers.
-  NEVER ranges like 10-20 — pick a number or use 0 if unknown.
+- active_open_roles_total: total open roles globally. PREFER ats_jobs' total
+  when it returns ≥ hiring_signals' total (ats_jobs is the canonical ATS count
+  and typically returns 3-5× more for B2B SaaS).
+- creative_marketing_roles_count: GLOBAL count of creative/marketing/brand/
+  design/content/AI-creative roles across ALL geographies.
+- creative_marketing_roles_in_scope_count: count of those roles whose
+  location is in UK + EU + NA (Superside's GTM markets). The ats_jobs tool
+  tags each important role with IN-SCOPE / OUT-OF-SCOPE / UNKNOWN-SCOPE —
+  copy its in-scope count here.
+
 - headcount_signal: one of "hiring" | "downsizing" | null.
-- headcount_signal="hiring" iff creative_marketing_roles_count >= 3.
+- **headcount_signal="hiring" iff creative_marketing_roles_in_scope_count >= 3.**
+  This is the LOCATION-AWARE threshold — Superside operates in UK+EU+NA and
+  AI/marketing roles posted in India, APAC, etc. typically signal R&D /
+  content-ops investment rather than addressable marketing-creative demand.
+- If the company has many global marketing/creative roles but FEWER than 3
+  in UK/EU/NA, set headcount_signal=null and STILL mention the global
+  hiring activity in headcount_summary (it's narrative context for the BDR,
+  just not strong enough to be a buying signal we'd act on with outreach).
 - headcount_signal="downsizing" iff recent_layoffs_detected=true (last 6 months).
 - Both can be null if neither signal triggers.
 - "Creative/marketing roles" includes: designers (any flavor), brand managers,
   creative directors, copywriters, content marketers, marketing operations,
   campaign managers, growth marketers, demand gen, product marketing.
-- Tool order: hiring_signals FIRST, then web_search for layoff news. The
-  hiring_signals output usually answers layoff questions implicitly via total
-  role count.
+- Tool order: hiring_signals FIRST, then ats_jobs, then web_search for
+  layoff news (only if needed).
 - active_open_roles_total: PREFER the ats_jobs total when available (it's the
   canonical count). Fall back to hiring_signals' merged count only if ats_jobs
   returned NO_ATS_MATCH for this company.
 - important_roles_open: copy from ats_jobs `Important roles currently open`
-  block. Each entry has the title, tier label, and URL. Empty list is fine.
+  block. Each entry has the title, tier label, URL, and `in_scope` flag
+  (true/false/null). Empty list is fine.
 - important_roles_recently_closed: copy from ats_jobs `Important roles closed
   since previous snapshot`. Empty if there's no prior snapshot to diff
   against, or if no important roles closed.
+
 - headcount_summary: 1-3 sentences for a sales-team audience. Carry `[N]`
   citation markers after specific numbers (open-role counts, layoff dollar
-  amounts/percentages) and named role titles. If important roles are open
-  or recently closed, mention the most signal-bearing one or two BY NAME
-  in the summary — that's the headline a BDR wants to see, not a generic
-  count. The summary becomes the Headcount subsection paragraph; the
-  orchestrator turns the markers into clickable links.
+  amounts/percentages) and named role titles.
+
+  Body-text rules for the summary:
+  * If creative_marketing_roles_in_scope_count >= 3: lead with the in-scope
+    hiring (the buying signal). Name the most senior or AI-related role
+    explicitly. Example: "AlphaSense is actively hiring creative leadership
+    in UK + US — a Marketing AI & Transformation Strategy Lead [1] and a
+    Senior Motion Designer [2] are both open."
+  * If GLOBAL creative_marketing_roles_count is meaningful (>=3) but
+    in-scope count < 3: STILL mention the global activity for context, but
+    explicitly note that it's outside GTM markets. Example: "Out of scope
+    for the `hiring` signal — AlphaSense has 8 marketing/content roles open
+    globally but they concentrate in Bengaluru and Pune; in UK + US they have
+    only 1 marketing posting." Do NOT trigger headcount_signal in this case.
+  * If both counts are < 3: brief 1-sentence summary, headcount_signal=null.
+
+  The summary becomes the Headcount subsection paragraph; the orchestrator
+  turns the `[N]` markers into clickable links.
 """ + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
     "type": "object",
     "required": [
         "active_open_roles_total", "creative_marketing_roles_count",
+        "creative_marketing_roles_in_scope_count",
         "recent_layoffs_detected", "headcount_signal", "headcount_summary",
         "citations", "sources", "confidence",
     ],
     "properties": {
         "active_open_roles_total": {"type": "integer"},
         "creative_marketing_roles_count": {"type": "integer"},
+        # v1.5.0: location-aware. Only UK+EU+NA roles count toward the
+        # `hiring` Buying Signal threshold. Out-of-scope roles still appear
+        # in headcount_summary for context but don't drive the signal.
+        "creative_marketing_roles_in_scope_count": {"type": "integer"},
         "creative_marketing_role_titles": {"type": "array", "items": {"type": "string"}},
         "recent_layoffs_detected": {"type": "boolean"},
         "layoff_summary": {"type": ["string", "null"]},
@@ -120,6 +154,7 @@ JSON_SCHEMA = {
         # the ats_jobs tool flagged via tier_1 / tier_2 / tier_3 patterns.
         # `url` is the canonical ATS detail page (not populated for closed
         # roles — we only have title from the diff).
+        # v1.5.0: `in_scope` flag — true iff role's location is UK + EU + NA.
         "important_roles_open": {
             "type": "array",
             "items": {
@@ -134,6 +169,7 @@ JSON_SCHEMA = {
                     ]},
                     "url": {"type": "string"},
                     "location": {"type": "string"},
+                    "in_scope": {"type": ["boolean", "null"]},
                 },
             },
         },

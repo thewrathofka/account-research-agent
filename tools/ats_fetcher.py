@@ -133,6 +133,144 @@ IMPORTANT_TITLE_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 
+# ============================================================================
+# Location classifier — UK + EU + NA = in-scope for Superside's GTM markets.
+# Determines whether a role's location counts toward the `hiring` Buying Signal.
+# Out-of-scope roles (e.g. India tech hubs) still surface in the page body
+# for narrative context, but don't trigger the signal.
+# ============================================================================
+
+# Country names, ISO codes, and common variants. Matched case-insensitively
+# against the location string. The full canonical name wins because partial
+# matches like "Indiana" can't accidentally fire "India" (handled below).
+_NA_TOKENS: tuple[str, ...] = (
+    "united states", "united states of america", "usa",
+    "canada",
+)
+_UK_TOKENS: tuple[str, ...] = (
+    "united kingdom", "england", "scotland", "wales",
+    "northern ireland", "britain",
+    # "UK" and "GB" as standalone words checked separately to avoid false
+    # positives like "DUKE university" — see _has_word_boundary_match below.
+)
+_EU_TOKENS: tuple[str, ...] = (
+    "germany", "france", "spain", "italy", "netherlands", "belgium",
+    "sweden", "denmark", "norway", "finland", "ireland", "austria",
+    "poland", "portugal", "greece", "czech republic", "czechia",
+    "hungary", "romania", "slovakia", "slovenia", "croatia", "estonia",
+    "latvia", "lithuania", "bulgaria", "cyprus", "luxembourg", "malta",
+    "switzerland",  # not EU politically but counts for Superside GTM scope
+)
+_IN_SCOPE_TOKENS: tuple[str, ...] = _NA_TOKENS + _UK_TOKENS + _EU_TOKENS
+_IN_SCOPE_ABBREV_WORDS: tuple[str, ...] = ("uk", "us", "gb", "eu", "nl", "de")
+
+# Cities that resolve unambiguously to an in-scope country. Used when the
+# location is just a city name with no country qualifier (Greenhouse does
+# this — see "Bengaluru", "Chicago" examples in AlphaSense's listing).
+_IN_SCOPE_CITIES: frozenset[str] = frozenset({
+    # NA
+    "new york", "san francisco", "los angeles", "chicago", "boston",
+    "seattle", "austin", "denver", "dallas", "houston", "atlanta",
+    "miami", "washington", "philadelphia", "minneapolis", "portland",
+    "san diego", "toronto", "vancouver", "montreal", "ottawa", "calgary",
+    "raleigh", "nashville", "phoenix", "salt lake city", "remote - us",
+    # UK
+    "london", "manchester", "edinburgh", "glasgow", "birmingham",
+    "bristol", "leeds", "cambridge", "oxford",
+    # EU major hubs
+    "berlin", "munich", "hamburg", "frankfurt", "dusseldorf", "cologne",
+    "paris", "lyon", "marseille",
+    "madrid", "barcelona", "valencia", "seville",
+    "milan", "rome", "florence", "turin",
+    "amsterdam", "rotterdam", "utrecht", "the hague",
+    "brussels", "antwerp", "ghent",
+    "stockholm", "gothenburg", "copenhagen", "oslo", "helsinki",
+    "dublin", "cork", "lisbon", "porto",
+    "warsaw", "krakow", "prague", "budapest", "athens", "vienna",
+    "zurich", "geneva",
+})
+_OUT_OF_SCOPE_CITIES: frozenset[str] = frozenset({
+    "bengaluru", "bangalore", "mumbai", "delhi", "new delhi", "noida",
+    "gurgaon", "gurugram", "hyderabad", "pune", "chennai", "kolkata",
+    "ahmedabad",
+    "sydney", "melbourne", "brisbane", "perth", "auckland",
+    "singapore", "hong kong", "tokyo", "osaka", "seoul",
+    "shanghai", "beijing", "shenzhen",
+    "tel aviv", "dubai", "abu dhabi", "doha", "riyadh",
+    "são paulo", "sao paulo", "rio de janeiro", "buenos aires",
+    "mexico city", "bogotá", "bogota", "santiago",
+    "lagos", "nairobi", "johannesburg", "cape town",
+})
+
+_WORD_RE = re.compile(r"\b\w+\b")
+
+
+def is_in_scope_location(location: str | None) -> bool | None:
+    """Return True iff location is in UK + EU + NA, False iff out-of-scope,
+    None iff unknown/ambiguous. Built for Greenhouse's varied location strings:
+
+      "Remote - United States"                            → True
+      "New York, New York, United States"                 → True
+      "London, Greater London, England, United Kingdom"   → True
+      "Helsinki, Uusimaa, Finland"                        → True
+      "Bengaluru"                                          → False (city blacklist)
+      "Remote - India"                                     → False
+      ""                                                   → None
+      "TBD"                                                → None
+
+    The convention: agent should count in-scope roles toward the `hiring`
+    Buying Signal threshold, surface out-of-scope hiring in the page body
+    for context (especially India + APAC tech hubs which often indicate
+    R&D/content-ops investment rather than marketing creative).
+    """
+    if not location:
+        return None
+    norm = location.lower().strip()
+
+    # Full-country-name match wins (handles "Remote - United States" cleanly).
+    for token in _IN_SCOPE_TOKENS:
+        if token in norm:
+            return True
+
+    # Abbreviation match — but require word boundaries so "Duke" doesn't fire
+    # on "uk" inside it.
+    words = set(_WORD_RE.findall(norm))
+    if any(abbrev in words for abbrev in _IN_SCOPE_ABBREV_WORDS):
+        return True
+
+    # Out-of-scope by country name?
+    if "india" in norm and "indiana" not in norm:
+        return False
+    for country in ("australia", "new zealand", "singapore", "japan",
+                    "china", "korea", "israel", "brazil", "mexico",
+                    "argentina", "uae", "saudi arabia"):
+        if country in norm:
+            return False
+
+    # Fall back to city lookups for bare-city locations.
+    # Check OUT-OF-SCOPE first because some out-of-scope city strings might
+    # contain a substring like "Bangalore" that the IN-SCOPE-CITIES set
+    # doesn't share — order doesn't actually matter since the sets are
+    # disjoint, but keeping the negative-flag-first reading model.
+    if norm in _OUT_OF_SCOPE_CITIES:
+        return False
+    if norm in _IN_SCOPE_CITIES:
+        return True
+    # Multi-city headers like "Chicago; New York, New York, United States"
+    # — try splitting and checking each segment.
+    if ";" in norm or "/" in norm:
+        for segment in re.split(r"[;/]", norm):
+            inner = is_in_scope_location(segment.strip())
+            if inner is True:
+                return True
+            if inner is False:
+                # Don't return False on the first OOS segment — the listing
+                # might still be advertised in an in-scope office too.
+                continue
+
+    return None
+
+
 def classify_important_title(title: str) -> tuple[str, str] | None:
     """Return (tier_id, tier_description) for the first matching tier, or None.
 
@@ -300,12 +438,15 @@ class ATSFetcherTool:
             if classification is None:
                 continue
             tier_id, tier_desc = classification
+            location_str = _location_string(j.get("location"))
+            in_scope = is_in_scope_location(location_str)
             important_open.append({
                 "title": title,
-                "location": _location_string(j.get("location")),
+                "location": location_str,
                 "url": j.get("absolute_url", ""),
                 "tier": tier_id,
                 "tier_description": tier_desc,
+                "in_scope": in_scope,  # True | False | None
                 "updated_at": j.get("updated_at"),
             })
 
@@ -427,16 +568,39 @@ def _render(
     else:
         lines.append("Previous snapshot: (none — this is the first run)")
 
+    # Per-region split of important roles. The model uses these counts to
+    # decide whether to set the `hiring` Buying Signal — only in-scope
+    # (UK + EU + NA) hiring counts as a buying signal for Superside.
+    in_scope_count = sum(1 for r in important_open if r["in_scope"] is True)
+    out_of_scope_count = sum(1 for r in important_open if r["in_scope"] is False)
+    unknown_scope_count = sum(1 for r in important_open if r["in_scope"] is None)
+
     lines.append("")
-    lines.append(f"Important roles currently open ({len(important_open)}):")
+    lines.append(
+        f"Important roles currently open ({len(important_open)} total — "
+        f"{in_scope_count} in UK/EU/NA, {out_of_scope_count} elsewhere, "
+        f"{unknown_scope_count} unknown location):"
+    )
     if important_open:
         for r in important_open[:30]:
+            scope_label = (
+                "IN-SCOPE" if r["in_scope"] is True
+                else "OUT-OF-SCOPE" if r["in_scope"] is False
+                else "UNKNOWN-SCOPE"
+            )
             lines.append(
-                f"  - [{r['tier']}] {r['title']} ({r['location']})\n"
+                f"  - [{r['tier']}] [{scope_label}] {r['title']} ({r['location']})\n"
                 f"      {r['url']}"
             )
     else:
         lines.append("  (none flagged)")
+    lines.append("")
+    lines.append(
+        "  Rule: only count IN-SCOPE (UK + EU + NA) hiring toward the "
+        "`hiring` Buying Signal. OUT-OF-SCOPE postings (e.g. India tech "
+        "hubs) belong in the page body for narrative context but do NOT "
+        "trigger the signal."
+    )
 
     lines.append("")
     lines.append(
