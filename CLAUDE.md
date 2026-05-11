@@ -28,36 +28,118 @@ so research output is interchangeable.
 
 ---
 
-## Current state (Track 1 — Python, v0.3.0 = end of Phase 1.5 (a + b))
+## Current state (Track 1 — Python, post-Phase 2 + ATS upgrade, 2026-05-11)
+
+**All shipped phases:**
+- ✅ Phase 1 (v0.1.0): the 9 Tavily+jobspy modules
+- ✅ Phase 1.5a (v0.2.0): model tiers, prompt caching, tool dedup, shared research context
+- ✅ Phase 1.5b (v0.3.0): Anthropic Batch API + v1.1.0 prompt trim
+- ✅ Fix Appendix (v0.4.0, 2026-05-09→11): 22 items + 3 corrections — see
+  `sessions/2026-05-09-fix-appendix-implementation.md`
+- ✅ Phase 2a (2026-05-11): module 10 ad library + Apify integration
+- ✅ Phase 2b (2026-05-11): module 4 strategic narrative + Pain Point Tags
+- ✅ Citation rollout (2026-05-11): orchestrator-side per-section renumbering,
+  applied to all 10 page-body modules
+- ✅ Module 14 v1.5.0 (2026-05-11): Greenhouse ATS direct read +
+  important-role open/close detection + location-aware hiring signal
+
+**11 task modules registered** (`tasks/__init__.py`):
+research_pass, module_01_gate, module_03, module_04, module_05, module_06,
+module_07, module_09, module_10, module_12, module_13, module_14.
+Module 4 runs LAST because it synthesizes from modules 1, 3, 12 outputs.
 
 **Cost picture (per account, Anthropic provider):**
 | Version | Per account | Notes |
 |---|---|---|
 | v0.0.0 / v0.1.0 | $1.37 | placeholder / 9 real prompts, no cost optimization |
 | v0.2.0 | ~$0.27 | model tiers + dedup + shared research context |
-| **v0.3.0 (now)** | **~$0.20** | + v1.1.0 prompts (trimmed) + Batch API for synthesis |
+| v0.3.0 | ~$0.20 | + v1.1.0 prompts (trimmed) + Batch API for synthesis |
+| **v0.4.0 + Phase 2 (now)** | **~$0.20–0.30** | adds modules 4 + 10 + ATS; Apify free-tier covers tool cost |
 
-All 7 cost pathways shipped:
-- ✅ #1 Per-task model tier (Haiku for modules 6/12/13)
-- ✅ #2 Prompt caching abstraction (Anthropic ephemeral, OpenAI auto)
-- ✅ #3 24h tool result dedup (SQLite)
-- ✅ #4 Gate output reuse downstream
-- ✅ #5 Shared research context (ResearchPass + synthesis_only modules)
-- ✅ #6 Batch API support (Anthropic only; OpenAI batch deferred)
-- ✅ #7 v1.1.0 prompt trim (synthesis prompts cleaned, integer guards added)
-- ✅ #8 Brave + Jina evaluation (infra ready; recommendation: stay on Tavily)
-
-Cross-provider proof of swap (live-measured):
-- module_01_gate v1.1.0 on Anthropic Sonnet 4.5: 100% schema/calib/sources, 91% coverage
-- module_01_gate v1.1.0 on OpenAI gpt-4.1: 100% schema/calib/sources, 94% coverage
-- ~47% cheaper per call on gpt-4.1 for this task
+Cross-provider proof of swap (live-measured, v0.3.0 era):
+- module_01_gate v1.1.0 on Anthropic Sonnet 4.6: 100% schema/calib/sources, 91% coverage
+- module_01_gate v1.1.0 on OpenAI gpt-5.5: 100% schema/calib/sources, 94% coverage
+- ~47% cheaper per call on OpenAI for this task
 - One-line swap via `--provider openai`
 
 Open follow-ups:
-- Full 9-task pipeline cross-provider eval (so far only module_01_gate measured)
-- OpenAI Batch API (file-upload flow; not bundled this PR)
-- Gemini provider (stub today)
-- Per-prompt golden cases for synthesis modules (only module_01_gate has goldens)
+- Full 11-task pipeline cross-provider eval (only module_01_gate has been
+  cross-provider tested)
+- OpenAI Batch API (file-upload flow; Anthropic Batch shipped)
+- Real Gemini provider (still a stub)
+- Per-prompt golden cases for modules 3, 4, 5, 6, 7, 9, 10, 12, 13, 14, 15
+  (currently only module_01_gate + a handful of others have goldens)
+- Lever / Ashby / Workday ATS providers (Greenhouse-only today)
+- Phase 3 hardening: cost ceilings per account, per-task resume, monthly
+  scheduled cron
+
+---
+
+## Citation system (orchestrator-side, all page-body modules)
+
+Each module's prompt instructs the model to emit `[N]` markers in page-body
+text + a `citations: [{n, title, url}]` array. The orchestrator's
+`_research_section_blocks`:
+
+1. Walks every task contributing to a page-body section in display order.
+2. Renumbers their citations globally per section starting at 1 (dedupes
+   same-URL entries across modules).
+3. Rewrites `[N]` markers in each task's blocks into clickable Notion
+   rich_text link spans pointing at the renumbered citation URL.
+4. Emits one footnote bullet list at the end of each section
+   (`Sources:` lead paragraph + one bullet per citation, leading `[N]`
+   clickable).
+
+Shared instruction text lives in `prompts/_citations.py`. Per-signal
+subsections under News (rendered from `TaskResult.signal_sections`) keep
+their existing per-signal URL bullets — they're evidence dumps, not narrative.
+
+Module 4 follows the same contract — its prior `to_blocks` self-rendering
+was moved to the orchestrator on 2026-05-11 (v2.1.0 → v2.2.0). The
+canonical reference for the contract is `prompts/_citations.py` and the
+implementation is in `orchestrator.py`.
+
+---
+
+## Module 14 — ATS direct read + location-aware hiring signal
+
+v1.5.0 (2026-05-11): jobspy was systematically under-reporting for B2B
+SaaS accounts (AlphaSense: 38 USA roles via jobspy vs 198 globally on
+Greenhouse). Module 14 now uses three tools:
+
+1. `hiring_signals` (jobspy) — secondary boards, breadth check
+2. `ats_jobs` (Greenhouse public API) — ATS direct, canonical for B2B SaaS
+3. `web_search` — only when needed for layoff news
+
+`ats_jobs` (`tools/ats_fetcher.py`) does three things:
+
+**Important-title classification.** A three-tier regex bank flags
+strategically-relevant roles:
+- Tier 1 — marketing/brand/creative/content/design × AI/ML/automation/
+  transformation (Kali's explicit ask)
+- Tier 2 — Head/VP/Director/Chief/CMO/CCO/SVP in marketing/brand/creative/
+  content/design/growth/demand-gen/RevOps; plus level-implicit titles
+  (Creative Director, Art Director, CMO standalone)
+- Tier 3 — Senior/Principal/Staff/Lead designer/motion designer/brand
+  designer/copywriter/content strategist
+First-match-wins so Tier 1 doesn't double-count as Tier 2.
+
+**Snapshot diff.** Every fetch is stored in SQLite (`ats_snapshots` table).
+On next run for the same company, the tool diffs against the prior snapshot
+and surfaces important roles that CLOSED between runs. Closures of senior
+creative/marketing roles = buying signal (the company just hired and is
+ramping creative ops).
+
+**Location-aware signal.** Each important role's location is classified via
+`is_in_scope_location()`:
+- In-scope: UK + EU + NA (Superside GTM markets)
+- Out-of-scope: India, APAC, ME, etc.
+- Unknown: no country qualifier present (Remote, TBD)
+
+Module 14 schema has `creative_marketing_roles_in_scope_count` separate
+from the global count. The `hiring` Buying Signal triggers iff
+`in_scope_count >= 3`. Out-of-scope creative hiring still appears in the
+Headcount page body for context but doesn't trigger the signal.
 
 ---
 
@@ -204,42 +286,80 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 
 ## Notion schema
 
-### Existing
-| Property | Type | Used by |
-|---|---|---|
-| `Account Name` | title | input |
-| `Rep` | select | filter |
-| `Priority Type` | select | filter |
-| `Size` | select (`<1000`/`1000-2000`/`2000-5000`/`5000+`) | module 1 |
-| `Buying Signals` | multi-select | modules 14 (`hiring`/`downsizing`) |
-| `Lead Signal` | multi-select | (not used by agent) |
-| `New Hire` | text | (not used by agent — module removed) |
-| `Company Structure ` | text (note: trailing space) | (manual / future use) |
-| `Parent-Child` | text | module 5 (sister / child names) |
-| `Name of Parent` | text | module 5 |
-| `Last Researched` | date | agent metadata |
-| `Research Confidence` | select (`high`/`medium`/`low`/`failed`) | agent metadata |
-| `Research Status` | select (`pending`/`done`/`needs_review`/`failed`) | agent metadata |
+### Current Notion schema (post-2026-05-11 migration)
 
-### Planned additions
-| Property | Type | Used by |
-|---|---|---|
-| `Structure Notes` | text | module 6 |
-| `Buying Intent` | multi-select | modules 7 + 13 |
-| `Research Status` (new option) | add `out_of_scope` | module 1 gate |
+| Property | Type | Used by | Owner |
+|---|---|---|---|
+| `Account Name` | title | input | (system) |
+| `Rep` | select | filter | manual |
+| `Priority Type` | select | filter | manual |
+| `Size` | select (`<1000`/`1000-2000`/`2000-5000`/`5000+`) | module 1 | agent |
+| `Buying Signals` | multi-select | modules 7 + 13 + 14 | **agent-only** |
+| `Buying Intent` | multi-select | (filter / curation) | **manual-only** |
+| `Pain Point Tags` | multi-select | module 4 | **agent-only** |
+| `Lead Signal` | multi-select | (not used by agent) | manual |
+| `New Hire` | url | (not used by agent — module removed) | manual |
+| `Company Structure` | text | (manual / future use) | manual |
+| `Parent-Child` | text | module 5 (sister / child brands) | agent |
+| `Parent` | text (renamed from `Name of Parent`) | module 5 (parent name / self if standalone-parent / empty) | agent |
+| `Structure Notes` | text | module 6 | agent |
+| `Last Researched` | date | agent metadata | agent |
+| `Research Confidence` | select (`high`/`medium`/`low`/`failed`) | agent metadata | agent |
+| `Research Status` | select (`pending`/`done`/`needs_review`/`failed`/`out_of_scope`) | module 1 gate + metadata | agent |
+| `Notes` | text | (not used by agent) | manual |
 
-`Buying Intent` options to create:
+### Multi-select option vocabularies
+
+`Buying Signals` (agent-only — overwrite semantics, empty multi_select clears stale tags):
 `funding round`, `active creative jobs`, `rebrand/campaign`, `agency switch`,
-`AI initiative`, `industry movement`.
+`AI initiative`, `industry movement`, `hiring`, `downsizing`.
 
-### Page body section order (left-to-right top-to-bottom)
-1. `Overview` — module 3
-2. `Headcount` (sub-section of Overview) — module 14
-3. `Possible Pain Points` — module 4
-4. `News` — module 7
+`Buying Intent` (manual-only — agent never writes):
+the BDR's curated tags: `MQA`, `unify high`, `unify mod`, `sales nav high`,
+`sales nav mod`, `industry`, `cluster`, `CW competitor`. (Legacy `hiring` /
+`downsizing` options exist as residue from before the 2026-05-11 role swap;
+agent does not write them.)
+
+`Pain Point Tags` (agent-only — module 4):
+`creative production`, `localization`, `new territory`, `strategy`,
+`audience education`, `competitive displacement`, `brand evolution`,
+`launch surge`, `AI receptivity`, `post-layoff overflow`.
+
+### 2026-05-11 schema migration notes
+
+- **Buying Signals / Buying Intent role swap.** Before this date `Buying
+  Signals` was dual-purpose (agent writing `hiring`/`downsizing` mixed with
+  human MQA/unify/etc. tags). The agent's writes were silently leaving
+  stale tags across reruns (e.g. AlphaSense's `downsizing` from May 9 still
+  sitting on the page on May 11 even though the new run found no layoffs).
+  Resolved structurally: agent owns `Buying Signals` 100%, humans own
+  `Buying Intent` 100%. Agent's writeback now always includes the property
+  (default empty multi_select) so stale tags clear on rerun.
+- **`Name of Parent` → `Parent` rename.** Same field, shorter name.
+- **`Pain Point Tags` populated.** Was a placeholder with `TBD - populate`;
+  now has the 10-tag vocabulary above as selectable options.
+- All schema changes were performed live via Notion MCP `ALTER COLUMN`.
+  Code's `EXPECTED_NOTION_PROPERTIES` constant (`crm.py`) is the contract;
+  the agent's `validate_schema()` call at startup halts the run if the
+  Notion schema drifts from this expectation.
+
+### Page body section order (top-to-bottom)
+1. `Overview` — modules 3 + 5
+2. `Headcount` (subsection of Overview) — module 14 + important-role bullets
+3. `Possible Pain Points` — module 4 (narrative + Pain Point Tags bullet)
+4. `News` — module 7 + per-signal subsections (`### funding round`,
+   `### industry movement`, `### hiring`, `### downsizing`, etc.) from
+   modules 7, 13, 14
 5. `Creative Posture` — module 9
-6. `Ads Running` (sub-section of Creative Posture) — module 10
+6. `Ads Running` (subsection of Creative Posture) — module 10
 7. `Competitor Landscape` — modules 12 + 13
+
+Each section ends with a `Sources:` footnote bullet list rendered by the
+orchestrator's per-section citation pass (see "Citation system" above).
+The page also has one global `Sources` heading_3 at the very bottom
+listing every URL the agent saw (catch-all for modules that haven't been
+migrated to citations yet — currently all 10 page-body modules emit
+citations, so this is largely redundant but kept as a safety net).
 
 ---
 
@@ -248,11 +368,17 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 ### In use
 - **Tavily** — broad web search, news, Wikipedia-grade facts. ~$0.008/search,
   1k/mo free.
-- **Anthropic API** — model inference. Sonnet 4.5 (~$3/M input, $15/M output).
-
-### Phase 2 additions
-- **Apify** — LinkedIn ad library, Meta ad library, TikTok ad library. Pay-per-use.
-- **jobspy** (free Python lib) — module 14 + module 9 JD scraping.
+- **Anthropic API** — model inference. Sonnet 4.6 (~$3/M input, $15/M output).
+- **jobspy** (free Python lib) — module 9 + 14 secondary-board scraping
+  (Indeed + LinkedIn; ZipRecruiter 403s and Glassdoor errors are known
+  issues — reduced coverage in practice).
+- **Greenhouse public API** — module 14's `ats_jobs` tool. Free, no auth.
+  198 open roles returned for AlphaSense vs jobspy's 38 — canonical for B2B
+  SaaS that uses Greenhouse.
+- **Apify** — module 10's `apify_ad_scraper` tool. LinkedIn (free) + Meta
+  ($0.65/1k results, gated by B2C/DTC classification) + TikTok (gated by
+  Gen-Z/lifestyle classification). Free tier $5/mo covers a single
+  8-account batch.
 
 ### Skipped
 - Firecrawl (deemed redundant given jobspy + Tavily covers Phase 1).
@@ -275,18 +401,31 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 
 ## Phase plan
 
-### Phase 1 — Tavily + jobspy only ($0.10-0.30/account)
+### ✅ Phase 1 — Tavily + jobspy only ($0.10-0.30/account)
 Modules: **1, 3, 5, 6, 7 (minus new-leader), 9 (jobspy only), 12, 13, 14.**
-Ships ~80% of the MVP without Apify. **Demo-able on Kali's 8 accounts.**
+Shipped. Live-verified on Kali's 8 Priority-A accounts on 2026-05-09.
 
-### Phase 2 — Add Apify ad libraries
-Modules: **4 (synthesis), 10 (LinkedIn always; Meta/TikTok gated by classification).**
+### ✅ Phase 2 — Add Apify ad libraries + pain-point synthesis
+- **2a**: module 10 (LinkedIn always; Meta/TikTok gated by audience).
+- **2b**: module 4 — strategic narrative + Pain Point Tags (v2.0.0 →
+  v2.2.0 = narrative-output style, no cold-email voice, no module-name
+  citations, no horoscope filler).
+- **2c** (not originally planned, added 2026-05-11): module 14 v1.5.0 —
+  Greenhouse ATS direct read + important-role open/close detection +
+  location-aware hiring signal (UK+EU+NA only triggers the `hiring`
+  Buying Signal).
 
-### Phase 3 — Hardening for team handoff
+All three shipped 2026-05-11.
+
+### Phase 3 — Hardening for team handoff (pending)
 - Cost ceilings per account (`--max-cost`).
 - Resume on partial failure (per-task, not just per-account).
-- Provider abstraction layer (so Gemini/OpenAI swap is a one-file change).
+- Real Gemini provider (currently a stub).
 - Monthly scheduled run (cron or `/schedule` skill).
+- Lever / Ashby / Workday ATS providers (Greenhouse-only today).
+- Optional: enrich `research_pass` with a "strategic positioning + growth
+  direction" section if module 4 narratives feel thin on smaller-profile
+  accounts (deferred — re-evaluate after the next live batch).
 
 ---
 
@@ -306,11 +445,13 @@ Modules: **4 (synthesis), 10 (LinkedIn always; Meta/TikTok gated by classificati
 
 ## Open decisions
 
-1. **Schema additions waiting approval** — `Structure Notes`, `Buying Intent`,
-   `out_of_scope` Research Status option. (Asked, not yet confirmed.)
-2. **Salesforce size band mismatch** — Notion has `1000-2000`, Salesforce
+1. **Salesforce size band mismatch** — Notion has `1000-2000`, Salesforce
    doesn't. Deferred — sync mapping problem, not relevant to research.
-3. **Apify account** — not yet created. Needed for Phase 2.
+2. **Closed in 2026-05-11 work:**
+   - ✅ Apify account created; key in `.env`.
+   - ✅ Schema additions: `Pain Point Tags`, `out_of_scope` option live.
+   - ✅ Buying Signals / Buying Intent role swap.
+   - ✅ `Name of Parent` → `Parent` rename.
 
 ---
 

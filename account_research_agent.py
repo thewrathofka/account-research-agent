@@ -45,6 +45,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--priority", default=PRIORITY_A,
                    help="Filter by Priority Type (default: %(default)s)")
     p.add_argument("--limit", type=int, default=None, help="Cap on accounts")
+    p.add_argument("--account", default=None,
+                   help="Run only the named account (substring match on title). "
+                        "Useful for single-account smoke tests targeting a "
+                        "specific company.")
     p.add_argument("--since", type=int, default=None, metavar="DAYS",
                    help="Only accounts not researched in the last N days")
     p.add_argument("--tasks", default="company_overview",
@@ -89,10 +93,19 @@ def main(argv: list[str] | None = None) -> int:
 
     accounts = crm.list_accounts(
         rep=args.rep, priority_type=args.priority,
-        researched_before=researched_before, limit=args.limit,
+        researched_before=researched_before, limit=None,  # apply --limit AFTER --account filter
     )
+    if args.account:
+        needle = args.account.strip().lower()
+        accounts = [a for a in accounts if needle in a.name.lower()]
+    if args.limit is not None:
+        accounts = accounts[: args.limit]
     if not accounts:
-        print("No accounts matched. Nothing to do.")
+        if args.account:
+            print(f"No account matched --account={args.account!r} under "
+                  f"rep={args.rep!r} priority={args.priority!r}. Nothing to do.")
+        else:
+            print("No accounts matched. Nothing to do.")
         return 0
 
     print(f"Provider: {provider.name} ({provider.model})")
