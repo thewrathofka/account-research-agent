@@ -1,68 +1,65 @@
-"""Tests for module_04 (pain-point synthesis) — prompt schema + task hooks."""
+"""Tests for module_04 (strategic narrative + pain tags) — v2.0.0."""
 
 from __future__ import annotations
 
 import jsonschema
 import pytest
 
+import crm
 import prompts.module_04_pain_points as prompt
-from tasks.module_04 import Module04PainPoints, UPSTREAM_MODULES
+from tasks.module_04 import ANCHOR_MODULES, Module04PainPoints
+
+
+# ---- vocabulary ----
+
+def test_tag_vocab_matches_crm_options() -> None:
+    """The prompt's TAG_VOCAB must align with the validated CRM option set —
+    if they drift, the model could emit tags the writeback layer silently drops."""
+    assert set(prompt.TAG_VOCAB.keys()) == crm.PAIN_POINT_TAG_OPTIONS
+
+
+def test_tag_vocab_has_kalis_tbauction_examples() -> None:
+    """The four tags Kali named in the design discussion (TBAuction example)
+    must all exist — they're the minimum baseline."""
+    for required in ["creative production", "localization", "new territory", "strategy"]:
+        assert required in prompt.TAG_VOCAB
 
 
 # ---- prompt + schema ----
 
-def test_pain_types_vocabulary_complete() -> None:
-    """The 6 canonical pain types must match the Superside value-prop spec."""
-    assert set(prompt.PAIN_TYPES) == {
-        "production_bottleneck",
-        "agency_cost_burn",
-        "hiring_gap",
-        "multi_market_localization",
-        "post_layoff_pressure",
-        "ai_creative_receptivity",
-    }
+def test_prompt_metadata() -> None:
+    assert prompt.VERSION == "v2.0.0"
+    # System prompt must forbid the v1.x failure modes.
+    sys_text = prompt.SYSTEM_PROMPT.lower()
+    assert "cold-email" in sys_text or "cold email" in sys_text
+    assert "module" in sys_text  # context of "do not cite module names"
+    assert "horoscope" in sys_text
 
 
-def test_schema_accepts_valid_two_pain_output() -> None:
+def test_schema_accepts_valid_narrative_output() -> None:
     sample = {
-        "pain_points": [
-            {
-                "pain_type": "post_layoff_pressure",
-                "hypothesis": "Oracle's 18% layoff overlaps with 24 active ads...",
-                "grounding": [
-                    {"module": "module_14_hiring_signal", "datum": "downsizing"},
-                    {"module": "module_10_ad_library", "datum": "24 LinkedIn ads"},
-                ],
-                "superside_angle": "Post-launch ABM surge",
-                "confidence": "high",
-            },
-            {
-                "pain_type": "multi_market_localization",
-                "hypothesis": "Oracle operates EU + NA + global...",
-                "grounding": [
-                    {"module": "module_01_gate", "datum": "regions_present=USA, UK, DE"},
-                ],
-                "superside_angle": "Multi-market localization",
-                "confidence": "medium",
-            },
-        ],
-        "sources": ["https://example.com/oracle"],
-        "confidence": "medium",
+        "narrative": (
+            "TBAuction operates an auction marketplace in a category dominated "
+            "by Meta Marketplace. Their conversion play is teaching sellers "
+            "in specific categories that auctions outperform 'list it on "
+            "Marketplace' for high-value goods.\n\nThey are expanding into "
+            "Italy, compounding the creative challenge — education-first "
+            "creative across product demos, comparison framing, and seller "
+            "success stories, localized for Italian sellers, while keeping "
+            "home-market demand-gen alive."
+        ),
+        "tags": ["audience education", "competitive displacement", "localization",
+                 "new territory", "creative production"],
+        "sources": ["https://example.com/tbauction"],
+        "confidence": "high",
     }
     jsonschema.validate(sample, prompt.JSON_SCHEMA)
 
 
-def test_schema_rejects_unknown_pain_type() -> None:
+def test_schema_rejects_unknown_tag() -> None:
     bad = {
-        "pain_points": [
-            {
-                "pain_type": "vibes_based_pain",   # not in PAIN_TYPES enum
-                "hypothesis": "...",
-                "grounding": [{"module": "x", "datum": "y"}],
-                "superside_angle": "...",
-                "confidence": "medium",
-            },
-        ],
+        "narrative": "x" * 60,
+        "tags": ["audience education", "vibes_based_tag"],  # second is not in enum
         "sources": [],
         "confidence": "medium",
     }
@@ -70,18 +67,10 @@ def test_schema_rejects_unknown_pain_type() -> None:
         jsonschema.validate(bad, prompt.JSON_SCHEMA)
 
 
-def test_schema_requires_at_least_one_grounding_per_pain() -> None:
-    """Empty grounding = ungrounded horoscope. Must be rejected."""
+def test_schema_rejects_empty_narrative() -> None:
     bad = {
-        "pain_points": [
-            {
-                "pain_type": "production_bottleneck",
-                "hypothesis": "they probably need more creative",
-                "grounding": [],
-                "superside_angle": "creative production",
-                "confidence": "low",
-            },
-        ],
+        "narrative": "",
+        "tags": ["strategy"],
         "sources": [],
         "confidence": "low",
     }
@@ -89,44 +78,27 @@ def test_schema_requires_at_least_one_grounding_per_pain() -> None:
         jsonschema.validate(bad, prompt.JSON_SCHEMA)
 
 
-def test_schema_accepts_zero_pain_points() -> None:
-    """When upstream context is thin, returning 0 pains is the right answer."""
-    sample = {
-        "pain_points": [],
-        "sources": [],
-        "confidence": "low",
-    }
-    jsonschema.validate(sample, prompt.JSON_SCHEMA)
-
-
-def test_schema_caps_at_four_pain_points() -> None:
+def test_schema_rejects_too_many_tags() -> None:
     too_many = {
-        "pain_points": [
-            {
-                "pain_type": "production_bottleneck",
-                "hypothesis": f"hyp {i}",
-                "grounding": [{"module": "x", "datum": f"d{i}"}],
-                "superside_angle": "x",
-                "confidence": "low",
-            }
-            for i in range(5)
-        ],
+        "narrative": "x" * 60,
+        "tags": ["creative production", "localization", "new territory",
+                 "strategy", "audience education", "competitive displacement"],
         "sources": [],
-        "confidence": "low",
+        "confidence": "high",
     }
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(too_many, prompt.JSON_SCHEMA)
 
 
-def test_prompt_metadata() -> None:
-    assert prompt.VERSION
-    assert "Superside" in prompt.SYSTEM_PROMPT
-    # The grounding requirement must be explicit in the system prompt or the
-    # eval can't enforce it.
-    assert "grounding" in prompt.SYSTEM_PROMPT.lower()
-    # The six canonical pain types must each appear in the prompt body.
-    for pt in prompt.PAIN_TYPES:
-        assert pt in prompt.SYSTEM_PROMPT
+def test_schema_accepts_zero_tags() -> None:
+    """Thin research → narrative-only output should still validate."""
+    sample = {
+        "narrative": "x" * 60,
+        "tags": [],
+        "sources": [],
+        "confidence": "low",
+    }
+    jsonschema.validate(sample, prompt.JSON_SCHEMA)
 
 
 # ---- task class ----
@@ -143,100 +115,185 @@ def test_task_section_targets_possible_pain_points() -> None:
     assert task.subsection is None
 
 
-def test_task_to_fields_empty() -> None:
-    """Module 4 is page-body only (spec §4)."""
-    task = Module04PainPoints()
-    assert task.to_fields({"pain_points": [{"pain_type": "x"}]}) == {}
-
-
-def test_task_to_blocks_emits_lead_plus_grounding() -> None:
+def test_task_to_fields_writes_pain_point_tags() -> None:
     task = Module04PainPoints()
     out = {
-        "pain_points": [
-            {
-                "pain_type": "post_layoff_pressure",
-                "hypothesis": "Oracle just cut 25k — surge capacity is the bottleneck.",
-                "grounding": [
-                    {"module": "module_14_hiring_signal", "datum": "downsizing, 25k cut"},
-                    {"module": "module_10_ad_library", "datum": "24 ads, 83% video"},
-                ],
-                "superside_angle": "Post-layoff overflow",
-                "confidence": "high",
-            },
-        ],
-        "sources": [],
-        "confidence": "medium",
+        "tags": ["audience education", "localization", "new territory"],
+    }
+    fields = task.to_fields(out)
+    assert crm.PROP_PAIN_POINT_TAGS in fields
+    names = [item["name"] for item in fields[crm.PROP_PAIN_POINT_TAGS]["multi_select"]]
+    assert names == ["audience education", "localization", "new territory"]
+
+
+def test_task_to_fields_filters_unknown_tags() -> None:
+    """Stray labels from the model are dropped, not exception-raised."""
+    task = Module04PainPoints()
+    out = {"tags": ["localization", "vibes_based_tag", "creative production"]}
+    fields = task.to_fields(out)
+    names = [item["name"] for item in fields[crm.PROP_PAIN_POINT_TAGS]["multi_select"]]
+    assert names == ["localization", "creative production"]  # vibes_based_tag dropped
+
+
+def test_task_to_fields_emits_empty_multiselect_when_no_tags() -> None:
+    """Empty multi_select overwrites stale tags from prior runs (same contract
+    as Buying Signals)."""
+    task = Module04PainPoints()
+    fields = task.to_fields({"tags": []})
+    assert fields == {crm.PROP_PAIN_POINT_TAGS: {"multi_select": []}}
+
+
+def test_task_to_blocks_emits_paragraphs_then_tag_bullet() -> None:
+    task = Module04PainPoints()
+    out = {
+        "narrative": "Paragraph one about positioning.\n\nParagraph two about growth.",
+        "tags": ["strategy", "new territory"],
     }
     blocks = task.to_blocks(out)
-    # 1 lead bullet + 2 grounding bullets = 3
+    # 2 paragraphs + 1 tag bullet = 3
     assert len(blocks) == 3
-    lead = blocks[0]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
-    assert lead.startswith("post_layoff_pressure")
-    assert "Superside angle" in lead
-    g0 = blocks[1]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
-    assert "module_14_hiring_signal" in g0
+    assert blocks[0]["type"] == "paragraph"
+    assert blocks[1]["type"] == "paragraph"
+    assert blocks[2]["type"] == "bulleted_list_item"
+    p1 = blocks[0]["paragraph"]["rich_text"][0]["text"]["content"]
+    p2 = blocks[1]["paragraph"]["rich_text"][0]["text"]["content"]
+    assert p1.startswith("Paragraph one")
+    assert p2.startswith("Paragraph two")
+    tag_line = blocks[2]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
+    assert tag_line.startswith("Pain tags:")
+    assert "strategy" in tag_line and "new territory" in tag_line
 
 
-def test_task_to_blocks_empty_pains_returns_explainer() -> None:
+def test_task_to_blocks_drops_unknown_tags_from_bullet() -> None:
     task = Module04PainPoints()
-    blocks = task.to_blocks({"pain_points": [], "sources": [], "confidence": "low"})
+    out = {
+        "narrative": "x" * 60,
+        "tags": ["localization", "vibes_based_tag"],
+    }
+    blocks = task.to_blocks(out)
+    tag_line = blocks[-1]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
+    assert "vibes_based_tag" not in tag_line
+    assert "localization" in tag_line
+
+
+def test_task_to_blocks_omits_tag_bullet_when_no_valid_tags() -> None:
+    task = Module04PainPoints()
+    out = {"narrative": "x" * 60, "tags": []}
+    blocks = task.to_blocks(out)
+    types = [b["type"] for b in blocks]
+    assert "bulleted_list_item" not in types
+
+
+def test_task_to_blocks_empty_narrative_returns_explainer() -> None:
+    task = Module04PainPoints()
+    blocks = task.to_blocks({"narrative": "", "tags": []})
     assert len(blocks) == 1
-    # The empty-state paragraph should hint at why (sufficient grounding lacking).
     text = blocks[0]["paragraph"]["rich_text"][0]["text"]["content"]
-    assert "grounding" in text or "pain" in text.lower()
+    assert "research" in text.lower() or "narrative" in text.lower()
 
 
 def test_task_to_signal_sections_empty() -> None:
     """Module 4 doesn't contribute Buying Signals tags."""
     task = Module04PainPoints()
-    assert task.to_signal_sections({"pain_points": []}) == []
+    assert task.to_signal_sections({"narrative": "x", "tags": []}) == []
 
 
-def test_build_user_message_pulls_upstream_outputs() -> None:
-    """The synthesis prompt must include each upstream module's output JSON."""
+# ---- build_user_message ----
+
+def test_build_user_message_includes_raw_research_and_anchors() -> None:
     task = Module04PainPoints()
     fake_context = {
+        "research_pass": {
+            "raw_research": "TBAuction is an auction platform competing with Meta Marketplace...",
+            "sources": ["https://tba.example.com"],
+        },
         "module_01_gate": {
-            "size_band": "5000+", "regions_present": ["USA", "UK"],
+            "size_band": "1000-2000", "regions_present": ["Netherlands", "Italy"],
             "sources": ["https://gate.example.com"],
         },
-        "module_14_hiring_signal": {
-            "headcount_signal": "downsizing",
-            "sources": ["https://layoffs.example.com"],
+        "module_03_revenue_model": {
+            "revenue_model": "Transaction fees on auctions",
+            "primary_customer_segment": "Individual + small-business sellers",
+            "sources": [],
+        },
+        "module_12_competitor_snapshot": {
+            "competitors": [{"name": "Meta Marketplace"}, {"name": "eBay"}],
+            "sources": [],
         },
     }
-    msg = task.build_user_message("Oracle", fake_context)
-    # Every declared upstream module appears as a section header (present or absent).
-    for mod in UPSTREAM_MODULES:
+    msg = task.build_user_message("TBAuction", fake_context)
+    # raw_research is the primary narrative source
+    assert "TBAuction is an auction platform" in msg
+    # All three anchor modules render their JSON
+    for mod in ANCHOR_MODULES:
         assert f"### {mod}" in msg
-    # The two we DID provide have actual JSON; the others are "(not run...)".
-    assert "regions_present" in msg
-    assert "downsizing" in msg
-    assert "(not run or no output)" in msg  # for the modules NOT in context
-    # Sources block is present and unioned.
+    assert "Netherlands" in msg
+    assert "Meta Marketplace" in msg
+    # Sources are unioned, raw_research sources included
+    assert "https://tba.example.com" in msg
     assert "https://gate.example.com" in msg
-    assert "https://layoffs.example.com" in msg
 
 
-def test_build_user_message_handles_empty_context() -> None:
-    """Synthesis prompt must still build (degraded) when upstream context is empty."""
+def test_build_user_message_excludes_mechanical_modules() -> None:
+    """The mechanical signal modules (06/07/09/10/14) must NOT appear in the
+    prompt — that's the whole point of the v2.0.0 redesign."""
     task = Module04PainPoints()
-    msg = task.build_user_message("Oracle", {})
-    assert "Oracle" in msg
+    fake_context = {
+        "research_pass": {"raw_research": "x", "sources": []},
+        "module_01_gate": {"regions_present": ["USA"]},
+        # Even if these are in the envelope, the prompt must not embed them:
+        "module_06_structural_news": {"structure_note": "mass layoffs"},
+        "module_07_trigger_events": {"triggers_detected": ["funding round"]},
+        "module_09_creative_reality": {"creative_posture_summary": "..."},
+        "module_10_ad_library": {"platforms": [{"platform": "linkedin"}]},
+        "module_14_hiring_signal": {"headcount_signal": "downsizing"},
+    }
+    msg = task.build_user_message("X", fake_context)
+    for mechanical in ("module_06_structural_news", "module_07_trigger_events",
+                       "module_09_creative_reality", "module_10_ad_library",
+                       "module_14_hiring_signal"):
+        assert f"### {mechanical}" not in msg, (
+            f"Mechanical module {mechanical} leaked into module 4 prompt — "
+            "v2.0.0 design explicitly excludes these."
+        )
+
+
+def test_build_user_message_handles_missing_research_pass() -> None:
+    task = Module04PainPoints()
+    msg = task.build_user_message("X", {})
+    # Should still build (degraded path)
+    assert "X" in msg
+    assert "(no research_pass output available" in msg
+
+
+def test_build_user_message_handles_missing_anchors() -> None:
+    task = Module04PainPoints()
+    msg = task.build_user_message("X", {"research_pass": {"raw_research": "...", "sources": []}})
+    # All anchor modules render as "(not run or no output)" when absent
+    for mod in ANCHOR_MODULES:
+        assert f"### {mod}" in msg
     assert "(not run or no output)" in msg
-    assert "(no sources captured)" in msg
 
 
 # ---- registry wiring ----
 
 def test_task_registered_in_phase2_after_dependencies() -> None:
-    """Module 04 must be LAST in PHASE2_TASKS — all its upstreams have to run first."""
+    """Module 04 must be LAST in PHASE2_TASKS, and the 3 anchor deps must
+    appear earlier so the context envelope has their outputs."""
     from tasks import PHASE2_TASKS
     assert PHASE2_TASKS[-1] == "module_04_pain_points"
-    # And each of its upstream deps must appear earlier than it does.
     pos_04 = PHASE2_TASKS.index("module_04_pain_points")
-    for upstream in UPSTREAM_MODULES:
-        assert upstream in PHASE2_TASKS, f"{upstream} missing from PHASE2_TASKS"
-        assert PHASE2_TASKS.index(upstream) < pos_04, (
-            f"{upstream} runs AFTER module_04 — context envelope won't have its output"
+    for anchor in ANCHOR_MODULES:
+        assert anchor in PHASE2_TASKS, f"{anchor} missing from PHASE2_TASKS"
+        assert PHASE2_TASKS.index(anchor) < pos_04, (
+            f"{anchor} runs AFTER module_04 — context envelope won't have its output"
         )
+
+
+def test_anchor_modules_excludes_mechanical_signal_modules() -> None:
+    """v2.0.0 contract: only the 3 light anchors, no mechanical signals."""
+    assert set(ANCHOR_MODULES) == {
+        "module_01_gate",
+        "module_03_revenue_model",
+        "module_12_competitor_snapshot",
+    }

@@ -28,6 +28,7 @@ PROP_COMPANY_STRUCTURE = "Company Structure"  # no trailing space — must match
 PROP_STRUCTURE_NOTES = "Structure Notes"
 PROP_PARENT_CHILD = "Parent-Child"
 PROP_PARENT = "Parent"
+PROP_PAIN_POINT_TAGS = "Pain Point Tags"
 PROP_NOTES = "Notes"
 
 # Agent-managed
@@ -49,6 +50,14 @@ BUYING_SIGNAL_OPTIONS = {
 BUYING_INTENT_OPTIONS = {
     "unify mod", "unify high", "sales nav mod", "sales nav high",
     "industry", "cluster", "CW competitor", "MQA",
+}
+# Module 4 pain-point tags. Agent-managed via PROP_PAIN_POINT_TAGS. Each tag
+# names a kind of strategic pain that maps to a Superside service angle —
+# narrative, not mechanical-signal-derived (see prompts/module_04_pain_points.py).
+PAIN_POINT_TAG_OPTIONS = {
+    "creative production", "localization", "new territory", "strategy",
+    "audience education", "competitive displacement", "brand evolution",
+    "launch surge", "AI receptivity", "post-layoff overflow",
 }
 LEAD_SIGNAL_OPTIONS = {"TOFU", "MQL", "call request", "new hire"}
 RESEARCH_STATUS_OPTIONS = {"pending", "done", "needs_review", "failed", "out_of_scope"}
@@ -74,6 +83,7 @@ EXPECTED_NOTION_PROPERTIES: dict[str, str] = {
     PROP_PARENT: "rich_text",
     PROP_BUYING_SIGNALS: "multi_select",
     PROP_BUYING_INTENT: "multi_select",
+    PROP_PAIN_POINT_TAGS: "multi_select",
     PROP_STRUCTURE_NOTES: "rich_text",
 }
 

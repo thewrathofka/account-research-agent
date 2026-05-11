@@ -1,11 +1,14 @@
-"""Module 4 — Possible pain points (synthesis from modules 1, 3, 9, 10, 14).
+"""Module 4 — Strategic narrative + pain tags (v2.0.0 redesign 2026-05-11).
 
-Pure synthesis: no tools, single LLM call. Reads the structured JSON outputs
-of the upstream modules from the context envelope and produces 2-4 pain
-hypotheses, each grounded in specific cited data points.
+Synthesis-only task that reads research_pass.raw_research plus three light
+anchors (modules 1, 3, 12) and produces:
+- A 1-2 paragraph narrative for the BDR analyst (positioning + growth + audience).
+- A small set of pain tags (subset of crm.PAIN_POINT_TAG_OPTIONS) written to
+  Notion's `Pain Point Tags` multi-select.
 
-Page-body section: `Possible Pain Points` (2nd top-level section after Overview).
-No Notion property writes — body only.
+Drops the v1.x grounded-pain-hypotheses design entirely. Mechanical signal
+modules (06, 07, 09, 10, 14) are NOT in scope here — they have their own
+page-body sections and the Buying Signals subsections handle their narrative.
 """
 
 from __future__ import annotations
@@ -18,17 +21,13 @@ import prompts.module_04_pain_points as prompt
 from tasks.base import Task, _today_header
 
 
-# Upstream modules whose outputs ground the pain-point hypotheses. Order
-# matches the spec (modules 1, 3, 9, 10, 14). The synthesis prompt expects
-# these keys in the upstream block — if any are missing the model just
-# notes thinner grounding and lowers confidence.
-UPSTREAM_MODULES: list[str] = [
+# Upstream modules whose structured outputs anchor the narrative without
+# overwhelming it. research_pass.raw_research is the primary input;
+# these are factual scaffolding.
+ANCHOR_MODULES: list[str] = [
     "module_01_gate",
     "module_03_revenue_model",
-    "module_07_trigger_events",   # buying signals inform AI-receptivity + campaign pains
-    "module_09_creative_reality",
-    "module_10_ad_library",
-    "module_14_hiring_signal",
+    "module_12_competitor_snapshot",
 ]
 
 
@@ -40,33 +39,31 @@ class Module04PainPoints(Task):
     synthesis_only = True
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
-        """Fold upstream structured outputs into the synthesis prompt.
+        """Fold raw_research + the three anchor module outputs into the
+        synthesis prompt. Mechanical signal modules are intentionally absent
+        — see module-level docstring."""
+        research_pass = context.get("research_pass") or {}
+        raw_research = research_pass.get("raw_research", "")
+        research_sources = research_pass.get("sources", []) or []
 
-        Note: research_pass raw_research is intentionally omitted — module 4's
-        whole value is reasoning across already-distilled structured outputs,
-        not re-reading raw research. Including it would burn input tokens
-        and risk the model anchoring on raw text instead of citing module
-        outputs (which is the grounding-evidence requirement).
-        """
-        upstream_blocks: list[str] = []
-        for mod_name in UPSTREAM_MODULES:
+        anchor_blocks: list[str] = []
+        for mod_name in ANCHOR_MODULES:
             output = context.get(mod_name)
             if not output:
-                upstream_blocks.append(f"### {mod_name}\n(not run or no output)\n")
+                anchor_blocks.append(f"### {mod_name}\n(not run or no output)\n")
                 continue
-            upstream_blocks.append(
+            anchor_blocks.append(
                 f"### {mod_name}\n```json\n"
                 + json.dumps(output, indent=2, ensure_ascii=False)
                 + "\n```\n"
             )
+        anchors_text = "\n".join(anchor_blocks)
 
-        upstream_text = "\n".join(upstream_blocks)
-
-        # Sources from each upstream module — model's `sources` field must be
-        # a subset of these (Fix Appendix #6 — eval verifies subset).
-        all_sources: list[str] = []
-        seen: set[str] = set()
-        for mod_name in UPSTREAM_MODULES:
+        # Union of upstream source URLs — model's `sources` field must be a
+        # subset of these (Fix Appendix #6 — eval verifies subset).
+        all_sources: list[str] = list(research_sources)
+        seen: set[str] = set(all_sources)
+        for mod_name in ANCHOR_MODULES:
             out = context.get(mod_name) or {}
             for url in out.get("sources", []) or []:
                 if url and url not in seen:
@@ -74,47 +71,66 @@ class Module04PainPoints(Task):
                     all_sources.append(url)
         sources_block = "\n".join(f"- {u}" for u in all_sources) or "(no sources captured)"
 
+        research_section = (
+            f"## Research material (the narrative source)\n\n{raw_research}\n\n"
+            if raw_research
+            else "## Research material\n\n(no research_pass output available; "
+                 "produce a short, low-confidence narrative based only on the "
+                 "anchor modules below)\n\n"
+        )
+
         return (
             f"{_today_header()}\n\n"
             f"Company: {account_name}.\n\n"
-            "## Upstream module outputs\n\n"
-            f"{upstream_text}\n"
+            f"{research_section}"
+            f"## Factual anchors (structured outputs from prior modules)\n\n"
+            f"{anchors_text}\n"
             f"## Available source URLs\n{sources_block}\n\n"
-            "Synthesize 2-4 grounded pain-point hypotheses per the schema. "
-            "Each must cite specific data from the modules above — no generic "
-            "horoscope pains. Drop a pain rather than ship one without "
-            "grounding."
+            "Write the analyst's brief per the schema. Narrative first — "
+            "tell the strategic story of where this company is competitively "
+            "and where they're trying to grow. Then pick 2-5 tags from the "
+            "vocabulary that best describe the strategic pains your narrative "
+            "names. No cold-email voice, no module-name citations, no "
+            "horoscope filler."
         )
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
-        return {}  # page-body only
+        """Write the validated tags to Notion's `Pain Point Tags` multi-select.
+
+        Unknown tags (anything outside crm.PAIN_POINT_TAG_OPTIONS) are dropped
+        rather than raising — same pattern as module 7's BUYING_SIGNAL_OPTIONS
+        guard. If the model returns zero valid tags we still emit an empty
+        multi-select so a previous run's stale tags get cleared on rerun
+        (same overwrite-on-write contract as Buying Signals).
+        """
+        tags = output.get("tags") or []
+        valid = [t for t in tags if t in crm.PAIN_POINT_TAG_OPTIONS]
+        return {
+            crm.PROP_PAIN_POINT_TAGS: {
+                "multi_select": [{"name": t} for t in valid],
+            }
+        }
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
-        pains = output.get("pain_points") or []
-        if not pains:
+        """Emit narrative paragraphs + one final tag bullet.
+
+        The narrative may contain blank-line-separated paragraphs — split on
+        double newlines and emit each as its own paragraph block so Notion
+        renders them with breathing room rather than as one giant wall.
+        """
+        narrative = (output.get("narrative") or "").strip()
+        if not narrative:
             return [crm.paragraph(
-                "No specific pain hypotheses surfaced from upstream research "
-                "with sufficient grounding."
+                "No narrative produced — research material was insufficient "
+                "to support a specific strategic story this run."
             )]
+
         blocks: list[dict[str, Any]] = []
-        for p in pains:
-            ptype = p.get("pain_type", "?")
-            hyp = p.get("hypothesis", "")
-            angle = p.get("superside_angle", "")
-            conf = p.get("confidence", "")
-            grounding = p.get("grounding") or []
+        for para in [p.strip() for p in narrative.split("\n\n") if p.strip()]:
+            blocks.append(crm.paragraph(para))
 
-            # Lead line: pain_type · superside_angle · confidence + the hypothesis.
-            head = f"{ptype} ({conf}) — Superside angle: {angle}. {hyp}"
-            blocks.append(crm.bullet(head))
-
-            # Each grounding bullet under the parent — but Notion's API treats
-            # bullet children separately; for simplicity we emit them as nested
-            # bullets at the same level prefixed with the citing module. The
-            # page reader can still trace which datum supports which pain.
-            for g in grounding:
-                mod = g.get("module", "?")
-                datum = g.get("datum", "")
-                blocks.append(crm.bullet(f"    ↳ {mod}: {datum}"))
+        tags = [t for t in (output.get("tags") or []) if t in crm.PAIN_POINT_TAG_OPTIONS]
+        if tags:
+            blocks.append(crm.bullet("Pain tags: " + " · ".join(tags)))
 
         return blocks

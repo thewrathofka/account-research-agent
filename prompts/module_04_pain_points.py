@@ -1,151 +1,152 @@
-"""Module 4 — Possible pain points (synthesis-only).
+"""Module 4 — Strategic narrative + pain tags (v2.0.0 redesign 2026-05-11).
 
-This is the highest-judgment task in the pipeline. It does NOT do its own
-research. It reads the structured outputs of modules 1, 3, 9, 10, 14 (all
-already in the context envelope by the time module 4 runs) and produces
-2-4 pain hypotheses that:
-  (a) tie to a canonical Superside value-prop angle (the `pain_type` enum), and
-  (b) are grounded in SPECIFIC data points cited from the upstream modules.
+The synthesizer that tells a BDR analyst what's actually going on with this
+account — competitive positioning, growth direction, who the company is
+trying to convert into customers, and what story they need to tell to do it.
 
-The grounding requirement is the whole game. Generic "Oracle is big and probably
-has creative needs" is useless to a BDR. "Oracle is running 24 active LinkedIn
-ads (83% video) while posting zero creative/marketing roles and absorbing an
-18% layoff" is a write-the-email-now hypothesis.
+This is NOT mechanical pain-type inference from layoff counts and ad volumes.
+The 2026-05-11 v1.x design was rejected because:
+  - The output read like cold-email copy (which is the BDR's job to write).
+  - It cited module names as "grounding" — noise to a salesperson.
+  - Pain hypotheses were derived mechanically from upstream signal modules
+    rather than from a real read of the company's strategic position.
 
-Page body output: heading `Possible Pain Points` (handled by the orchestrator)
-+ one bullet per pain with the hypothesis and grounding evidence inline.
+v2.0.0 instead asks for an analyst's brief: 1-2 paragraphs of narrative that
+synthesise the raw research into a competitive + growth story, plus a small
+set of pain tags from a curated vocabulary that go into Notion's `Pain Point
+Tags` multi-select for CRM filtering.
+
+Inputs (provided by tasks/module_04.py.build_user_message):
+- research_pass.raw_research            ← the narrative source (free text)
+- module_01_gate output                  ← regions_present anchor
+- module_03_revenue_model output         ← business model + customer segment
+- module_12_competitor_snapshot output   ← competitor names + differentiators
+
+Inputs that are deliberately NOT provided to this module:
+- module_06_structural_news, module_07_trigger_events, module_09_creative_reality,
+  module_10_ad_library, module_14_hiring_signal — those produce mechanical
+  signals (layoffs, ad volume, hiring counts). Module 4's job is strategic
+  narrative, not signal aggregation. Cross-referencing those is what the per-
+  signal subsections under News already do.
 """
 
-VERSION = "v1.0.0"
+VERSION = "v2.0.0"
 
-# The canonical pain-type vocabulary tied to Superside's value prop. Each
-# pain_type the model emits MUST be one of these — anything else is a hallu.
-PAIN_TYPES = [
-    "production_bottleneck",
-    "agency_cost_burn",
-    "hiring_gap",
-    "multi_market_localization",
-    "post_layoff_pressure",
-    "ai_creative_receptivity",
-]
+# Curated pain-tag vocabulary. Each tag names a kind of *strategic pain* —
+# a reason the account needs creative-as-a-service. Mirrors crm.PAIN_POINT_TAG_OPTIONS
+# and the live Notion `Pain Point Tags` multi-select options.
+TAG_VOCAB: dict[str, str] = {
+    "creative production":
+        "High ad volume / always-on demand-gen / surge capacity for launches. The volume play.",
+    "localization":
+        "Multi-market translation + adaptation across regions/languages.",
+    "new territory":
+        "Recent or announced geographic expansion (new country, new region).",
+    "strategy":
+        "Positioning / messaging / 'what story to tell' help, not just execution.",
+    "audience education":
+        "Teaching new buyers a non-obvious use case "
+        "(e.g. 'use auctions instead of marketplace apps').",
+    "competitive displacement":
+        "Trying to win audience away from a dominant incumbent — "
+        "needs strong differentiation creative.",
+    "brand evolution":
+        "Rebrand / major repositioning / new visual identity rollout.",
+    "launch surge":
+        "Specific product launch or major event driving short-term creative volume.",
+    "AI receptivity":
+        "Company is publicly betting on AI in its own product/GTM — "
+        "predisposed to AI-creative service pitch.",
+    "post-layoff overflow":
+        "Recent material headcount cuts — same output expectations, fewer people, "
+        "agency offload becomes urgent.",
+}
 
-SYSTEM_PROMPT = """You are a B2B sales research agent for Superside, a
-creative-as-a-service company that helps marketing teams ship more creative
-faster (production scale, multi-market localization, agency overflow, AI-augmented
-creative).
 
-Synthesize 2-4 SPECIFIC pain-point hypotheses for the target company from the
-upstream module outputs in the user message. NO new research. NO tool calls.
+def _format_vocab_for_prompt() -> str:
+    return "\n".join(f"- `{tag}`: {desc}" for tag, desc in TAG_VOCAB.items())
 
-The user message contains the structured JSON outputs of:
-- module_01_gate (size + regions)
-- module_03_revenue_model (revenue + customer segment + products)
-- module_09_creative_reality (in-house creative posture + named agencies + JD pain phrases)
-- module_10_ad_library (per-platform ads_running + format mix + volume)
-- module_14_hiring_signal (hiring/downsizing signal + role counts)
 
-Map each pain to one of these canonical pain_types:
-- "production_bottleneck": agency overflow / surge capacity for launches, always-on
-  demand-gen. Use when high ads_running + low creative hiring + post-layoff context.
-- "agency_cost_burn": expensive agency relationships the company might switch from.
-  Use when named_agencies exist + post-layoff "do more with less" context.
-- "hiring_gap": creative/marketing roles open but hard to fill (long-running listings,
-  multiple regions). Use when creative_marketing_roles_count > 0 with regional spread.
-- "multi_market_localization": EU + NA + global ops means translating/adapting
-  creative across markets. Use when regions_present spans multiple regions.
-- "post_layoff_pressure": "same output, fewer people." Use when headcount_signal=
-  "downsizing" — agency offload becomes urgent.
-- "ai_creative_receptivity": company is publicly betting on AI (per buying_signals
-  from upstream) → predisposed to AI-augmented creative service.
+SYSTEM_PROMPT = f"""You are a B2B sales research analyst at Superside, a
+creative-as-a-service company.
+
+Your job is to read the research material in the user message and produce an
+analyst's brief telling a BDR what's actually going on with this account:
+where the company sits competitively, who they are trying to convert into
+customers, where they are trying to grow, and what story they need to tell
+to win that audience.
+
+The output has two parts:
+
+1. **narrative** — 1-2 paragraphs of straight prose (NOT bullets, NOT a cold
+   email). Read like a junior analyst briefing the AE before a call. Cover:
+   - The company's competitive position vs. the named competitors. What is
+     the *conversion play* — who they're trying to win over, how, and what
+     mental model they need their target customer to adopt? Concrete: "X
+     teaches mid-size sellers that auctions outperform marketplaces for
+     specific high-value categories" beats "X is well-positioned".
+   - Where they're growing — geographic expansion if announced, new audience
+     segments, new use cases. Name countries, regions, or buyer personas
+     explicitly when the research mentions them.
+   - What strategic creative challenge falls out of that combination —
+     e.g. "they have to produce educational creative across three new EU
+     markets while running always-on demand gen for the core US business."
+     This is the connective tissue the BDR will use to frame outreach.
+
+2. **tags** — pick 2-5 from this canonical vocabulary that best describe the
+   strategic pains the narrative names. Use only these exact strings:
+
+{_format_vocab_for_prompt()}
+
+Hard rules for the narrative:
+- DO NOT write in cold-email voice ("I noticed that you..." / "What if you...").
+  The narrative is an internal analyst note, not outreach copy.
+- DO NOT cite upstream module names ("module_14 says..."). The BDR doesn't
+  care about the agent's plumbing.
+- DO NOT mechanically infer pain from raw signal counts ("they have 24 ads
+  therefore production bottleneck"). That's a horoscope. Tie pains to *what
+  the company is trying to do strategically* — the ads are a downstream
+  symptom, not the pain.
+- DO NOT hedge with generic creative-needs filler ("they probably need more
+  creative"). If the research doesn't support a specific story, write a
+  shorter narrative and lower confidence.
 
 Output JSON in a ```json fenced block:
 
 ```json
-{
-  "pain_points": [
-    {
-      "pain_type": "post_layoff_pressure",
-      "hypothesis": "Oracle's 18% layoff (March-April 2026, ~25k cut) overlaps with 24 active LinkedIn ad campaigns and a major product launch (Oracle AI World, March 24). The Oracle Digital Experience Agency now has fewer headcount but the same launch + always-on demand-gen volume — surge capacity for the AI World motion and follow-on ABM creative is the bottleneck.",
-      "grounding": [
-        {"module": "module_14_hiring_signal", "datum": "headcount_signal=downsizing, ~20-30k cut March-April 2026"},
-        {"module": "module_10_ad_library", "datum": "24 active LinkedIn ads, medium volume, 83% video"},
-        {"module": "module_07_trigger_events", "datum": "rebrand/campaign — Oracle AI World launch March 24"}
-      ],
-      "superside_angle": "Post-launch ABM creative surge + always-on demand-gen overflow",
-      "confidence": "high"
-    },
-    {
-      "pain_type": "multi_market_localization",
-      "hypothesis": "Oracle operates across EU + NA + global, but its in-house Oracle Digital Experience Agency is US-anchored. Multi-region campaign adaptation for OCI cloud and AI launches is the kind of work that historically goes to networked agencies — Superside's localization workflow displaces that spend.",
-      "grounding": [
-        {"module": "module_01_gate", "datum": "regions_present=USA + UK + Germany + Netherlands"},
-        {"module": "module_09_creative_reality", "datum": "in-house agency US-anchored (Seattle, Bay Area, Mexico studios)"}
-      ],
-      "superside_angle": "Multi-market campaign adaptation + localization throughput",
-      "confidence": "medium"
-    }
-  ],
-  "sources": ["..."],
-  "confidence": "medium"
-}
+{{
+  "narrative": "TBAuction operates a vertical-auction marketplace in a category dominated by Meta Marketplace, eBay, and adjacent peer-to-peer selling apps. Their conversion play is education-led: they need to teach sellers in specific high-value categories (collectibles, industrial equipment, niche enthusiast goods) that auctions outperform 'list it on Marketplace' for these particular use cases — a non-obvious mental shift their target sellers haven't made yet.\\n\\nThey are simultaneously expanding into Italy, which compounds the strategic creative challenge: they have to teach the same use-case shift in a new language and cultural context where neither the company nor the auction format has the brand awareness they enjoy at home. The pain is not 'they need more banner ads' — it is that they need education-first creative at high volume across three to four content formats (product demo, comparison framing, seller success story, category-specific case), localized for Italian sellers, while keeping their home-market always-on demand-gen alive.",
+  "tags": ["audience education", "competitive displacement", "localization", "new territory", "creative production"],
+  "sources": ["https://..."],
+  "confidence": "high"
+}}
 ```
 
-Rules:
-- 2-4 pain_points. Fewer is fine if upstream evidence is thin.
-- Every pain_point MUST have at least one `grounding` entry citing a SPECIFIC
-  data point from the upstream modules. Vague grounding ("they're a big company")
-  is a hallucination — drop the pain point instead.
-- `pain_type` MUST be exactly one of the six canonical types listed above.
-- `hypothesis` is 2-3 sentences. Specific. Names data. Reads like a BDR could
-  paste it into a cold email after light editing.
-- `superside_angle` is a short phrase naming the Superside service or workflow
-  this pain maps to.
-- Per-pain `confidence` reflects how strong the grounding is, not how strong
-  the hypothesis sounds.
-- Overall `confidence`:
-  - "high"  = at least 2 pains have high per-pain confidence and ground in
-              specific quantitative data (counts, dates, regions)
-  - "medium" = at least 1 pain is well-grounded; others are reasonable but soft
-  - "low"   = upstream context was thin (gate failed, modules errored, etc.)
-              → output 0-1 pains and flag this clearly
-- `sources`: the URLs already cited by the upstream modules whose data you
-  used. Subset of upstream module sources.
-- DO NOT invent facts not present in the upstream module outputs.
-- DO NOT hedge with generic pain ("they probably need more creative") — that's
-  not a hypothesis, that's a horoscope.
+`confidence`:
+- "high"   = the research clearly supports a specific narrative naming
+             concrete competitive moves, growth plays, or strategic shifts.
+- "medium" = some narrative material present but key pieces (growth play,
+             conversion strategy) are inferred or thin.
+- "low"    = research is thin / mostly generic; narrative is short or
+             cautious. Prefer a short honest narrative + few tags over
+             padding with horoscope filler.
+
+`sources`: subset of the URLs already in the upstream module sources lists.
+Do NOT invent URLs. Empty array is fine if no specific citations apply.
+
+`tags`: 2-5 entries. Pick only the ones the narrative actually supports —
+better to ship 3 tight tags than 5 mushy ones.
 """
 
 JSON_SCHEMA = {
     "type": "object",
-    "required": ["pain_points", "sources", "confidence"],
+    "required": ["narrative", "tags", "sources", "confidence"],
     "properties": {
-        "pain_points": {
+        "narrative": {"type": "string", "minLength": 50},
+        "tags": {
             "type": "array",
-            "minItems": 0, "maxItems": 4,
-            "items": {
-                "type": "object",
-                "required": ["pain_type", "hypothesis", "grounding",
-                             "superside_angle", "confidence"],
-                "properties": {
-                    "pain_type": {"type": "string", "enum": PAIN_TYPES},
-                    "hypothesis": {"type": "string"},
-                    "grounding": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "type": "object",
-                            "required": ["module", "datum"],
-                            "properties": {
-                                "module": {"type": "string"},
-                                "datum": {"type": "string"},
-                            },
-                        },
-                    },
-                    "superside_angle": {"type": "string"},
-                    "confidence": {"type": "string",
-                                   "enum": ["high", "medium", "low"]},
-                },
-            },
+            "minItems": 0, "maxItems": 5,
+            "items": {"type": "string", "enum": list(TAG_VOCAB.keys())},
         },
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
