@@ -22,7 +22,10 @@ class Module05CorporateStructure(Task):
         # Parent: parent name | own name (if itself the parent) | empty.
         structure = output.get("structure_type")
         parent_name = output.get("parent_company")
-        company_name = output.get("company_name")
+        # `_account_name` is injected by Task.run() from the Notion record so
+        # parent-type companies get their canonical CRM name (not whatever the
+        # model chose to call them).
+        company_name = output.get("_account_name")
 
         if structure == "parent" and company_name:
             fields[crm.PROP_PARENT] = _rich_text(company_name)

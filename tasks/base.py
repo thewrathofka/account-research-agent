@@ -220,9 +220,20 @@ class Task:
         if confidence not in {"high", "medium", "low"}:
             confidence = "low"
 
+        # Inject the canonical Notion account name as ephemeral context for the
+        # to_* hooks. Popped before result construction so it never lands in
+        # the run log's output_json or in downstream task context envelopes.
+        # Used by module_05 to write the Notion `Parent` property as the
+        # account's own name when structure_type == "parent".
+        output["_account_name"] = account_name
+        fields = self.to_fields(output)
+        page_blocks = self.to_blocks(output)
+        signal_sections = self.to_signal_sections(output)
+        output.pop("_account_name", None)
+
         return TaskResult(
             task_name=self.name, output=output, confidence=confidence,
-            fields=self.to_fields(output), page_blocks=self.to_blocks(output),
+            fields=fields, page_blocks=page_blocks,
             section=self.section, subsection=self.subsection,
             sources=output.get("sources", []) or [],
             search_count=sum(t.call_count for t in tools),
@@ -232,7 +243,7 @@ class Task:
             cached_input_tokens=result.cached_input_tokens,
             model_used=result.model_used,
             tool_results_seen=observed_urls,
-            signal_sections=self.to_signal_sections(output),
+            signal_sections=signal_sections,
         )
 
 
