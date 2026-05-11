@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
     git_sha TEXT,                          -- added Phase 1
     cached_input_tokens INTEGER DEFAULT 0, -- added Phase 1.5a
     model_tier TEXT,                       -- added Phase 1.5a — "smart" | "fast"
-    model_used TEXT                        -- added Phase 1.5a — actual model name
+    model_used TEXT,                       -- added Phase 1.5a — actual model name
+    tool_results_seen TEXT                 -- Fix #6 — JSON list of URLs the model actually saw
 );
 CREATE INDEX IF NOT EXISTS idx_task_runs_account ON task_runs(account_page_id);
 CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at);
@@ -61,6 +62,23 @@ _PHASE1_COLS = ["prompt_version", "provider", "git_sha"]
 # Columns added in Phase 1.5a.
 _PHASE15A_COLS_TEXT = ["model_tier", "model_used"]
 _PHASE15A_COLS_INT = ["cached_input_tokens"]
+# Column added by Fix Appendix #6 — JSON list of URLs the model actually saw via tools.
+_FIXAPP_COLS_TEXT = ["tool_results_seen"]
+
+
+def _open_conn(path: Path | str) -> sqlite3.Connection:
+    """Open a SQLite connection hardened for our ThreadPoolExecutor write pattern.
+
+    PRAGMAs (Fix Appendix #7):
+      - journal_mode=WAL  — readers and writers don't block each other
+      - busy_timeout=30s  — wait instead of failing on transient lock contention
+      - foreign_keys=ON   — enforce FK constraints if any tables ever add them
+    """
+    conn = sqlite3.connect(str(path), timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
 
 
 @dataclass
@@ -86,6 +104,7 @@ class RunRecord:
     cached_input_tokens: int = 0
     model_tier: str | None = None
     model_used: str | None = None
+    tool_results_seen: str | None = None  # JSON list of URLs the model actually saw
 
 
 class RunLog:
@@ -96,7 +115,7 @@ class RunLog:
             self._migrate(c)
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
-        """Idempotently add Phase 1 + 1.5a columns to pre-existing databases."""
+        """Idempotently add Phase 1 + 1.5a + Fix Appendix columns to pre-existing databases."""
         existing = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
         for col in _PHASE1_COLS:
             if col not in existing:
@@ -107,10 +126,13 @@ class RunLog:
         for col in _PHASE15A_COLS_INT:
             if col not in existing:
                 conn.execute(f"ALTER TABLE task_runs ADD COLUMN {col} INTEGER DEFAULT 0")
+        for col in _FIXAPP_COLS_TEXT:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE task_runs ADD COLUMN {col} TEXT")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.path)
+        conn = _open_conn(self.path)
         try:
             yield conn
             conn.commit()
@@ -125,15 +147,16 @@ class RunLog:
                  status, confidence, model, input_tokens, output_tokens,
                  search_count, duration_seconds, error, output_json, dry_run,
                  prompt_version, provider, git_sha,
-                 cached_input_tokens, model_tier, model_used)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 cached_input_tokens, model_tier, model_used, tool_results_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (run.account_page_id, run.account_name, run.task_name,
                  run.started_at, run.completed_at, run.status, run.confidence,
                  run.model, run.input_tokens, run.output_tokens, run.search_count,
                  run.duration_seconds, run.error, run.output_json,
                  1 if run.dry_run else 0,
                  run.prompt_version, run.provider, run.git_sha,
-                 run.cached_input_tokens, run.model_tier, run.model_used),
+                 run.cached_input_tokens, run.model_tier, run.model_used,
+                 run.tool_results_seen),
             )
             return cur.lastrowid
 
@@ -170,7 +193,7 @@ class ToolCallCache:
         self.path = Path(path)
         self.ttl = timedelta(hours=ttl_hours)
         # Schema lives in RunLog._SCHEMA — just open the connection.
-        with sqlite3.connect(self.path) as c:
+        with _open_conn(self.path) as c:
             c.executescript(_SCHEMA)
 
     @staticmethod
@@ -182,7 +205,7 @@ class ToolCallCache:
     def lookup(self, tool_name: str, args: dict[str, Any]) -> str | None:
         """Return cached response text if not expired, else None."""
         args_hash = self._hash_args(args)
-        with sqlite3.connect(self.path) as c:
+        with _open_conn(self.path) as c:
             row = c.execute(
                 """SELECT response_text, expires_at
                    FROM tool_call_cache
@@ -196,13 +219,32 @@ class ToolCallCache:
             return None  # expired — caller will re-fetch and overwrite
         return response_text
 
-    def store(self, tool_name: str, args: dict[str, Any], response_text: str) -> None:
-        """Cache a response. Overwrites existing entry for the same key."""
-        from datetime import datetime as _dt, timezone as _tz
+    def store(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        response_text: str,
+        ttl_hours: float | None = None,
+        ttl_minutes: float | None = None,
+    ) -> None:
+        """Cache a response. Overrides instance-level TTL when caller passes one.
+
+        Fix Appendix #9: a 24h cache for "ERROR: retryable search failure: 429"
+        poisons every subsequent call for a day. Tools pass `ttl_minutes=30` for
+        retryable errors (or skip caching entirely) and the default 24h only for
+        true successes.
+        """
+        from datetime import datetime as _dt, timedelta, timezone as _tz
         args_hash = self._hash_args(args)
         cached_at = iso_now()
-        expires_at = (_dt.now(_tz.utc) + self.ttl).isoformat()
-        with sqlite3.connect(self.path) as c:
+        if ttl_hours is not None:
+            ttl = timedelta(hours=ttl_hours)
+        elif ttl_minutes is not None:
+            ttl = timedelta(minutes=ttl_minutes)
+        else:
+            ttl = self.ttl
+        expires_at = (_dt.now(_tz.utc) + ttl).isoformat()
+        with _open_conn(self.path) as c:
             c.execute(
                 """INSERT OR REPLACE INTO tool_call_cache
                    (tool_name, args_hash, response_text, cached_at, expires_at)
@@ -212,7 +254,7 @@ class ToolCallCache:
 
     def stats(self) -> dict[str, int]:
         """Return current cache size + expired count for telemetry."""
-        with sqlite3.connect(self.path) as c:
+        with _open_conn(self.path) as c:
             total = c.execute("SELECT COUNT(*) FROM tool_call_cache").fetchone()[0]
             now = iso_now()
             fresh = c.execute(

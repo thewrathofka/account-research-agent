@@ -16,6 +16,7 @@ from providers.base import LLMProvider
 from run_log import RunLog, RunRecord, iso_now, serialize_output
 from tasks import GATE_TASKS, TASK_REGISTRY
 from tasks.base import Task, TaskResult
+from writeback import write_account_outcome, write_gate_failure_to_notion
 
 
 log = logging.getLogger(__name__)
@@ -147,7 +148,8 @@ class Orchestrator:
         self, account: Account, results: list[TaskResult], dry_run: bool,
     ) -> AccountOutcome:
         """Gate task ran successfully but determined the account is out of scope.
-        Write a minimal Notion update + reason; skip page-body assembly of full sections."""
+        Delegate the actual Notion writes to writeback.write_gate_failure_to_notion
+        so sync and batch paths share the same gate-failure shape (Fix Appendix #4)."""
         gate_result = next((r for r in results if r.task_name in GATE_TASKS), None)
         confidence = gate_result.confidence if gate_result else "low"
         if confidence == "failed":
@@ -161,24 +163,9 @@ class Orchestrator:
             )
 
         try:
-            properties: dict[str, Any] = {
-                crm_module.PROP_LAST_RESEARCHED: {"date": {"start": date.today().isoformat()}},
-                crm_module.PROP_RESEARCH_CONFIDENCE: {"select": {"name": confidence}},
-                crm_module.PROP_RESEARCH_STATUS: {"select": {"name": "out_of_scope"}},
-            }
-            self.crm.update_properties(account.page_id, properties)
-
-            # Append a small "out of scope" notice to the page body.
-            blocks = [
-                crm_module.heading_2(f"Research — {date.today().isoformat()}"),
-                crm_module.paragraph("Out of scope: gate failed (no EU/NA operations confirmed)."),
-            ]
-            if gate_result and gate_result.output:
-                reason = gate_result.output.get("reason_if_out_of_scope")
-                if reason:
-                    blocks.append(crm_module.paragraph(f"Reason: {reason}"))
-            blocks.append(crm_module.divider())
-            self.crm.append_blocks(account.page_id, blocks)
+            wrote = write_gate_failure_to_notion(
+                self.crm, account, results, confidence, dry_run=False,
+            )
         except Exception as e:
             log.exception("[%s] Notion write failed (gate path)", account.name)
             return AccountOutcome(
@@ -188,10 +175,11 @@ class Orchestrator:
 
         return AccountOutcome(
             account=account, task_results=results, overall_confidence=confidence,
-            overall_status="out_of_scope", wrote_to_notion=True,
+            overall_status="out_of_scope", wrote_to_notion=wrote,
         )
 
     def _record_run(self, account: Account, result: TaskResult, dry_run: bool) -> None:
+        import json
         # Resolve model_tier from the task class for run-log accounting.
         task_cls = TASK_REGISTRY.get(result.task_name)
         model_tier = getattr(task_cls, "model_tier", "smart") if task_cls else "smart"
@@ -212,6 +200,7 @@ class Orchestrator:
             cached_input_tokens=result.cached_input_tokens,
             model_tier=model_tier,
             model_used=result.model_used,
+            tool_results_seen=json.dumps(result.tool_results_seen) if result.tool_results_seen else None,
         ))
 
     def _write_to_notion(
@@ -221,36 +210,16 @@ class Orchestrator:
         overall_conf: str,
         overall_status: str,
     ) -> None:
-        # Merge per-task field updates. Multi-selects are unioned.
-        properties: dict[str, Any] = {}
-        for r in results:
-            for k, v in r.fields.items():
-                if (
-                    k in (crm_module.PROP_BUYING_SIGNALS, crm_module.PROP_BUYING_INTENT)
-                    and k in properties
-                    and "multi_select" in properties[k]
-                ):
-                    existing = properties[k]["multi_select"]
-                    seen = {item["name"] for item in existing}
-                    for item in v["multi_select"]:
-                        if item["name"] not in seen:
-                            existing.append(item)
-                            seen.add(item["name"])
-                else:
-                    properties[k] = v
-
-        # Always write agent-managed metadata.
-        properties[crm_module.PROP_LAST_RESEARCHED] = {"date": {"start": date.today().isoformat()}}
-        properties[crm_module.PROP_RESEARCH_CONFIDENCE] = {
-            "select": {"name": overall_conf if overall_conf != "failed" else "low"}
-        }
-        properties[crm_module.PROP_RESEARCH_STATUS] = {"select": {"name": overall_status}}
-
-        self.crm.update_properties(account.page_id, properties)
-
+        """Delegate to writeback.write_account_outcome — single source of truth
+        for property merging, idempotent block append, and write ordering."""
         blocks = _research_section_blocks(results)
-        if blocks:
-            self.crm.append_blocks(account.page_id, blocks)
+        write_account_outcome(
+            self.crm, account, results,
+            overall_status=overall_status,
+            overall_confidence=overall_conf,
+            research_blocks=blocks,
+            dry_run=False,
+        )
 
 
 def _aggregate_confidence(results: list[TaskResult]) -> str:
@@ -337,6 +306,18 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
                 all_sources.append(url)
                 seen_sources.add(url)
 
+    # Collect per-signal subsections from ANY task (regardless of declared
+    # section). Rendered under News so every Buying Signals tag has a sourced
+    # explanation right next to the rest of the news context.
+    signal_subsections: list[dict[str, Any]] = []
+    for r in results:
+        if r.error is not None:
+            continue
+        signal_subsections.extend(r.signal_sections or [])
+    # News section is force-emitted when there are signals to report — even if
+    # no task explicitly targeted (section="News", subsection=None).
+    has_news_signals = bool(signal_subsections)
+
     # Emit each top-level section in fixed order, with its subsections.
     for section in _SECTION_ORDER:
         section_results = [
@@ -347,7 +328,9 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
             r for r in results
             if r.section == section and r.error is not None
         ]
-        if not section_results and not section_errors:
+        if not section_results and not section_errors and not (
+            section == "News" and has_news_signals
+        ):
             continue
 
         blocks.append(crm_module.heading_3(section))
@@ -355,6 +338,22 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
         # First the None-subsection content (the main body of this section).
         for r in grouped.get((section, None), []):
             blocks.extend(r.page_blocks or [])
+
+        # News-only: emit a heading_3 + logic paragraph + sources per detected
+        # Buying Signal. One subsection per tag the agent wrote, so each
+        # signal on the property has its provenance and reasoning on the page.
+        if section == "News" and signal_subsections:
+            for sig in signal_subsections:
+                signal_name = sig.get("signal") or "signal"
+                blocks.append(crm_module.heading_3(signal_name))
+                logic = sig.get("logic") or ""
+                if logic:
+                    blocks.append(crm_module.paragraph(logic))
+                urls = [u for u in (sig.get("sources") or []) if u]
+                if urls:
+                    blocks.append(crm_module.paragraph("Sources:"))
+                    for url in urls:
+                        blocks.append(crm_module.bullet(url))
 
         # Then each declared subsection, in order.
         for sub in _SUBSECTION_ORDER.get(section, [None]):

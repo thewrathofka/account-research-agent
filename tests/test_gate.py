@@ -71,12 +71,25 @@ class FakeCRM:
     def __init__(self):
         self.property_writes: list[tuple[str, dict[str, Any]]] = []
         self.block_appends: list[tuple[str, list[dict[str, Any]]]] = []
+        self.archived_block_ids: list[str] = []
 
     def update_properties(self, page_id, properties):
         self.property_writes.append((page_id, properties))
 
     def append_blocks(self, page_id, blocks):
         self.block_appends.append((page_id, list(blocks)))
+
+    def replace_latest_research_section(self, page_id, blocks, prefix=None):
+        # Test stand-in for the idempotent write path. We don't model the
+        # archive-old-blocks step here — the test doesn't preload prior content —
+        # so this is equivalent to append_blocks for assertion purposes.
+        self.append_blocks(page_id, blocks)
+
+    def find_latest_agent_section(self, page_id, prefix=None):
+        return []
+
+    def validate_schema(self, expected=None):
+        return None
 
 
 def _make_orch(provider, dbpath):

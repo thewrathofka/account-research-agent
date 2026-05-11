@@ -1,4 +1,5 @@
-"""Module 5 — Corporate structure. Output → Parent-Child + Name of Parent properties."""
+"""Module 5 — Corporate structure. Output → Parent-Child (sibling/child brands)
++ Parent (parent company name; self-name if itself a parent; empty if standalone)."""
 
 from __future__ import annotations
 
@@ -18,15 +19,15 @@ class Module05CorporateStructure(Task):
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         fields: dict[str, Any] = {}
-        # Name of Parent: parent name | own name (if itself the parent) | empty.
+        # Parent: parent name | own name (if itself the parent) | empty.
         structure = output.get("structure_type")
         parent_name = output.get("parent_company")
         company_name = output.get("company_name")
 
         if structure == "parent" and company_name:
-            fields[crm.PROP_NAME_OF_PARENT] = _rich_text(company_name)
+            fields[crm.PROP_PARENT] = _rich_text(company_name)
         elif structure == "subsidiary" and parent_name:
-            fields[crm.PROP_NAME_OF_PARENT] = _rich_text(parent_name)
+            fields[crm.PROP_PARENT] = _rich_text(parent_name)
         # standalone → leave empty (don't write the property at all, preserves manual edits)
 
         # Parent-Child: capture sister/child brands (if any), comma-separated.

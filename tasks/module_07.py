@@ -1,8 +1,9 @@
 """Module 7 — Trigger events (last 90 days).
 
 Output:
-- Buying Intent multi-select (the detected trigger tags)
-- News page section with one bullet per trigger detail
+- Buying Signals multi-select (the detected trigger tags — 2026-05-11 role swap)
+- News page section: one bullet per trigger + a per-signal subsection appended
+  under News by the orchestrator (heading + logic + sources)
 """
 
 from __future__ import annotations
@@ -27,11 +28,11 @@ class Module07TriggerEvents(Task):
             return {}
         # Filter against the canonical vocab so a stray label can't poison the
         # multi-select payload.
-        valid = [t for t in triggers if t in crm.BUYING_INTENT_OPTIONS]
+        valid = [t for t in triggers if t in crm.BUYING_SIGNAL_OPTIONS]
         if not valid:
             return {}
         return {
-            crm.PROP_BUYING_INTENT: {
+            crm.PROP_BUYING_SIGNALS: {
                 "multi_select": [{"name": t} for t in valid],
             }
         }
@@ -46,3 +47,16 @@ class Module07TriggerEvents(Task):
             summary = d.get("summary", "")
             blocks.append(crm.bullet(f"{trigger}: {summary}"))
         return blocks
+
+    def to_signal_sections(self, output: dict[str, Any]) -> list[dict[str, Any]]:
+        details = output.get("trigger_details") or []
+        sections: list[dict[str, Any]] = []
+        for d in details:
+            trigger = d.get("trigger")
+            if trigger not in crm.BUYING_SIGNAL_OPTIONS:
+                continue
+            summary = d.get("summary") or ""
+            per_url = d.get("url")
+            sources = [per_url] if per_url else list(output.get("sources") or [])
+            sections.append({"signal": trigger, "logic": summary, "sources": sources})
+        return sections

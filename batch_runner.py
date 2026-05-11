@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date
 from typing import Any
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -42,6 +41,7 @@ from providers.base import BatchRequest, LLMProvider
 from run_log import RunLog, RunRecord, iso_now, serialize_output
 from tasks import GATE_TASKS, TASK_REGISTRY
 from tasks.base import Task, TaskResult
+from writeback import write_account_outcome, write_gate_failure_to_notion
 
 
 log = logging.getLogger(__name__)
@@ -116,6 +116,11 @@ def run_batch(
         )
         for (page_id, task_name), task_result in batch_results.items():
             per_account_results[page_id].append(task_result)
+            # Fix Appendix #1 — surface successful synthesis outputs to Pass 3
+            # context so tool-using tasks (modules 9, 14) can read what the
+            # synthesis modules already established and skip redundant searches.
+            if task_result.output is not None and task_result.error is None:
+                per_account_context[page_id][task_name] = task_result.output
             run_log.record(_to_run_record(
                 next(a for a in accounts if a.page_id == page_id),
                 task_result, dry_run, provider.name, _git_sha_safe(),
@@ -141,12 +146,32 @@ def run_batch(
     outcomes: list[AccountOutcome] = []
     for acc in accounts:
         results = per_account_results[acc.page_id]
+
+        # Fix Appendix #4 — gated accounts in batch mode now follow the SAME
+        # writeback path as the sync orchestrator. Previously batch mode just
+        # returned wrote_to_notion=False for gated rows, leaving Notion stale.
         if per_account_gated[acc.page_id]:
+            gate_result = next((r for r in results if r.task_name in GATE_TASKS), None)
+            confidence = gate_result.confidence if gate_result else "low"
+            if confidence == "failed":
+                confidence = "low"
+            try:
+                wrote = write_gate_failure_to_notion(
+                    crm, acc, results, confidence, dry_run=dry_run,
+                )
+            except Exception as e:
+                log.exception("[%s] Notion write failed (gate path, batch)", acc.name)
+                outcomes.append(AccountOutcome(
+                    account=acc, task_results=results, overall_confidence=confidence,
+                    overall_status="failed", wrote_to_notion=False, error=str(e),
+                ))
+                continue
             outcomes.append(AccountOutcome(
-                account=acc, task_results=results, overall_confidence="high",
-                overall_status="out_of_scope", wrote_to_notion=False,
+                account=acc, task_results=results, overall_confidence=confidence,
+                overall_status="out_of_scope", wrote_to_notion=wrote,
             ))
             continue
+
         conf = _aggregate_confidence(results)
         status = _derive_status(results, conf)
         if dry_run or status == "failed":
@@ -156,10 +181,17 @@ def run_batch(
             ))
             continue
         try:
-            _write_outcome_to_notion(crm, acc, results, conf, status)
+            blocks = _research_section_blocks(results)
+            wrote = write_account_outcome(
+                crm, acc, results,
+                overall_status=status,
+                overall_confidence=conf,
+                research_blocks=blocks,
+                dry_run=False,
+            )
             outcomes.append(AccountOutcome(
                 account=acc, task_results=results, overall_confidence=conf,
-                overall_status=status, wrote_to_notion=True,
+                overall_status=status, wrote_to_notion=wrote,
             ))
         except Exception as e:
             log.exception("[%s] Notion write failed", acc.name)
@@ -327,6 +359,7 @@ def _to_run_record(
     account: Account, result: TaskResult, dry_run: bool,
     provider_name: str, git_sha: str | None,
 ) -> RunRecord:
+    import json
     task_cls = TASK_REGISTRY.get(result.task_name)
     model_tier = getattr(task_cls, "model_tier", "smart") if task_cls else "smart"
     return RunRecord(
@@ -346,6 +379,7 @@ def _to_run_record(
         cached_input_tokens=result.cached_input_tokens,
         model_tier=model_tier,
         model_used=result.model_used,
+        tool_results_seen=json.dumps(result.tool_results_seen) if result.tool_results_seen else None,
     )
 
 
@@ -359,35 +393,6 @@ def _git_sha_safe() -> str | None:
         return None
 
 
-def _write_outcome_to_notion(
-    crm: NotionCRM, account: Account, results: list[TaskResult],
-    overall_conf: str, overall_status: str,
-) -> None:
-    """Same as Orchestrator._write_to_notion — extracted to share with batch path."""
-    import crm as crm_module
-    properties: dict[str, Any] = {}
-    for r in results:
-        for k, v in r.fields.items():
-            if (
-                k in (crm_module.PROP_BUYING_SIGNALS, crm_module.PROP_BUYING_INTENT)
-                and k in properties
-                and "multi_select" in properties[k]
-            ):
-                existing = properties[k]["multi_select"]
-                seen = {item["name"] for item in existing}
-                for item in v["multi_select"]:
-                    if item["name"] not in seen:
-                        existing.append(item)
-                        seen.add(item["name"])
-            else:
-                properties[k] = v
-    properties[crm_module.PROP_LAST_RESEARCHED] = {"date": {"start": date.today().isoformat()}}
-    properties[crm_module.PROP_RESEARCH_CONFIDENCE] = {
-        "select": {"name": overall_conf if overall_conf != "failed" else "low"}
-    }
-    properties[crm_module.PROP_RESEARCH_STATUS] = {"select": {"name": overall_status}}
-
-    crm.update_properties(account.page_id, properties)
-    blocks = _research_section_blocks(results)
-    if blocks:
-        crm.append_blocks(account.page_id, blocks)
+# NOTE: the historical _write_outcome_to_notion was removed in the Fix Appendix
+# refactor. All Notion writeback flows through writeback.write_account_outcome /
+# writeback.write_gate_failure_to_notion now (Fix #15).

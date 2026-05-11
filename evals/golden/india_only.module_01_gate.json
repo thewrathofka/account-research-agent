@@ -1,0 +1,13 @@
+{
+  "company_name": "Cred (India)",
+  "notes": "Stress case for the gate: India-only fintech with no EU or NA office presence. Catches false positives where a single LinkedIn sales rep in the US is treated as 'operational presence'. Should fail the gate decisively.",
+  "module_01_gate": {
+    "expected": {
+      "operates_in_eu": false,
+      "operates_in_na": false,
+      "operates_in_eu_or_na": false,
+      "confidence": "high"
+    },
+    "expected_confidence": "high"
+  }
+}

@@ -18,7 +18,11 @@ from typing import Any
 import httpx
 
 import config
+from rate_limit import JINA_LIMITER
 from run_log import ToolCallCache
+
+
+JINA_READER_TOOL_VERSION = "jina_reader_v2"
 
 
 JINA_READER_SCHEMA: dict[str, Any] = {
@@ -68,8 +72,19 @@ class JinaReaderTool:
         return self._cache_hits
 
     def __call__(self, url: str) -> str:
+        if self._count >= config.TAVILY_SEARCHES_PER_TASK_CAP:
+            return (
+                f"ERROR: read_url cap reached for this task "
+                f"({config.TAVILY_SEARCHES_PER_TASK_CAP}). "
+                "Produce best-effort output with low confidence."
+            )
         self._count += 1
-        args = {"backend": "jina", "url": url}
+        args = {
+            "backend": "jina",
+            "url": url,
+            "max_chars": self.max_chars,
+            "tool_version": JINA_READER_TOOL_VERSION,
+        }
         cached = self.cache.lookup(self.name, args)
         if cached is not None:
             self._cache_hits += 1
@@ -78,12 +93,22 @@ class JinaReaderTool:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         try:
-            resp = httpx.get(f"https://r.jina.ai/{url}", headers=headers, timeout=30.0)
+            with JINA_LIMITER:
+                resp = httpx.get(f"https://r.jina.ai/{url}", headers=headers, timeout=30.0)
             resp.raise_for_status()
             text = resp.text
-        except httpx.HTTPError as e:
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code if e.response is not None else None
+            if status in (408, 425, 429, 500, 502, 503, 504):
+                err = f"ERROR: retryable Jina fetch failure: {status}"
+                self.cache.store(self.name, args, err, ttl_minutes=30)
+                return err
             return f"ERROR: Jina Reader fetch failed for {url}: {type(e).__name__}: {e}"
+        except (httpx.HTTPError, TimeoutError) as e:
+            err = f"ERROR: retryable Jina fetch failure: {type(e).__name__}"
+            self.cache.store(self.name, args, err, ttl_minutes=30)
+            return err
         if len(text) > self.max_chars:
             text = text[: self.max_chars] + f"\n\n[truncated at {self.max_chars} chars]"
-        self.cache.store(self.name, args, text)
+        self.cache.store(self.name, args, text, ttl_hours=24)
         return text

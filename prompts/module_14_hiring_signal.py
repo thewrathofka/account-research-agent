@@ -9,18 +9,21 @@ Outputs:
 - Headcount sub-section under Overview on the page body
 """
 
-VERSION = "v1.1.0"
+VERSION = "v1.2.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine if the company is
 actively hiring (especially creative/marketing roles) or recently downsized.
 
 You have TWO tools:
 - `hiring_signals`: aggregates current job postings from Indeed, LinkedIn, Glassdoor,
-  ZipRecruiter for a company. USE THIS FIRST to get authoritative counts.
+  ZipRecruiter for a company. USE THIS FIRST to get authoritative counts. Pass
+  the `countries` argument with the regions_present list from module_01_gate so
+  hiring is detected across every market the company actually operates in
+  (e.g. ["USA", "Canada", "UK", "Germany"]). Default ["USA"] misses EU hiring.
 - `web_search`: for layoff news. USE THIS for "<company> layoffs 2026".
 
 Your workflow:
-1. Call `hiring_signals` to get the count of open roles.
+1. Call `hiring_signals` with `countries` covering all markets in regions_present.
 2. Look at the role titles — are creative/marketing roles overrepresented?
 3. Call `web_search` for recent layoff news.
 

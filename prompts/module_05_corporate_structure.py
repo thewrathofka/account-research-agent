@@ -21,7 +21,7 @@ Output JSON:
 
 Rules:
 - structure_type MUST be one of: "standalone" | "subsidiary" | "parent".
-- For Notion: parent_company will be written to "Name of Parent" property.
+- For Notion: parent_company will be written to "Parent" property.
   - If structure_type is "parent", write the company's own name.
   - If "standalone", write null.
 - notable_sister_or_child_brands: include only well-known brands relevant to

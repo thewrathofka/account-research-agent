@@ -14,6 +14,7 @@ from openai import OpenAI
 
 import config
 from providers.base import BatchHandle, BatchRequest, LLMProvider, ProviderResult
+from rate_limit import OPENAI_LIMITER
 from tools.base import Tool
 
 
@@ -21,7 +22,7 @@ class OpenAIProvider(LLMProvider):
     name = "openai"
     models = config.OPENAI_MODELS
     supports_caching = True  # auto-caches above 1024 tokens — no hint needed
-    supports_batch = False   # OpenAI Batch API uses file-upload flow; deferred
+    supports_batch = True    # Fix Appendix #22 — file-upload Batch API implemented below
 
     def __init__(self, max_retries: int = 8):
         self.model = self.models["smart"]
@@ -65,12 +66,13 @@ class OpenAIProvider(LLMProvider):
 
         try:
             for iteration in range(1, max_iterations + 1):
-                response = self.client.chat.completions.create(
-                    model=model,
-                    max_tokens=config.MAX_TOKENS,
-                    messages=messages,
-                    tools=tool_specs,
-                )
+                with OPENAI_LIMITER:
+                    response = self.client.chat.completions.create(
+                        model=model,
+                        max_tokens=config.MAX_TOKENS,
+                        messages=messages,
+                        tools=tool_specs,
+                    )
                 if response.usage:
                     input_tokens += response.usage.prompt_tokens
                     output_tokens += response.usage.completion_tokens
@@ -148,21 +150,115 @@ class OpenAIProvider(LLMProvider):
             )
 
 
-    # ---- Batch API (deferred) ----
+    # ---- Batch API (Fix Appendix #22 — file-upload flow) ----
 
     def submit_batch(self, requests: list[BatchRequest]) -> BatchHandle:
-        raise NotImplementedError(
-            "OpenAIProvider.submit_batch is deferred. Implementation needs the "
-            "OpenAI Batch API file-upload flow (create JSONL → upload → batch). "
-            "See https://platform.openai.com/docs/guides/batch. Anthropic batch "
-            "is fully implemented; use --provider anthropic for batch mode."
+        """Submit a batch via OpenAI's Batch API.
+
+        Flow: build JSONL with one /v1/chat/completions request per BatchRequest,
+        upload the file with purpose='batch', then create a batch pointed at it.
+        Each line carries the BatchRequest's custom_id so we can pair results.
+        """
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+
+        lines: list[bytes] = []
+        for r in requests:
+            body = {
+                "model": self._resolve_model(r.model_tier),
+                "messages": [
+                    {"role": "system", "content": r.system_prompt},
+                    {"role": "user", "content": r.user_message},
+                ],
+                "max_tokens": r.max_tokens or config.MAX_TOKENS,
+            }
+            lines.append(_json.dumps({
+                "custom_id": r.custom_id,
+                "method": "POST",
+                "url": "/v1/chat/completions",
+                "body": body,
+            }).encode("utf-8"))
+        payload = b"\n".join(lines)
+
+        with OPENAI_LIMITER:
+            file_obj = self.client.files.create(
+                file=("batch.jsonl", payload),
+                purpose="batch",
+            )
+        with OPENAI_LIMITER:
+            batch = self.client.batches.create(
+                input_file_id=file_obj.id,
+                endpoint="/v1/chat/completions",
+                completion_window="24h",
+            )
+        return BatchHandle(
+            batch_id=batch.id,
+            provider_name=self.name,
+            submitted_at=_dt.now(_tz.utc).isoformat(),
+            request_count=len(requests),
+            expected_status=_normalize_openai_batch_status(batch.status),
         )
 
     def poll_batch(self, handle: BatchHandle) -> str:
-        raise NotImplementedError("OpenAIProvider batch deferred")
+        with OPENAI_LIMITER:
+            batch = self.client.batches.retrieve(handle.batch_id)
+        return _normalize_openai_batch_status(batch.status)
 
     def fetch_batch_results(self, handle: BatchHandle) -> dict[str, ProviderResult]:
-        raise NotImplementedError("OpenAIProvider batch deferred")
+        """Read the output JSONL file and parse rows into ProviderResults."""
+        import json as _json
+
+        with OPENAI_LIMITER:
+            batch = self.client.batches.retrieve(handle.batch_id)
+        if not getattr(batch, "output_file_id", None):
+            raise RuntimeError(
+                f"OpenAI batch {handle.batch_id} has no output_file_id "
+                f"(status={batch.status}). Cannot fetch results."
+            )
+        with OPENAI_LIMITER:
+            content = self.client.files.content(batch.output_file_id).read().decode("utf-8")
+
+        out: dict[str, ProviderResult] = {}
+        for line in content.splitlines():
+            if not line.strip():
+                continue
+            row = _json.loads(line)
+            custom_id = row.get("custom_id")
+            err = row.get("error")
+            if err:
+                out[custom_id] = ProviderResult(
+                    text="", tool_calls_made=0, input_tokens=0, output_tokens=0,
+                    iterations=0, stop_reason="error",
+                    error=err.get("message") if isinstance(err, dict) else str(err),
+                )
+                continue
+            response = row.get("response") or {}
+            body = response.get("body") or {}
+            choices = body.get("choices") or []
+            msg = choices[0].get("message") if choices else {}
+            usage = body.get("usage") or {}
+            cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0
+            out[custom_id] = ProviderResult(
+                text=(msg or {}).get("content", "") or "",
+                tool_calls_made=0,
+                input_tokens=usage.get("prompt_tokens", 0) or 0,
+                output_tokens=usage.get("completion_tokens", 0) or 0,
+                cached_input_tokens=cached,
+                iterations=1,
+                stop_reason="end_turn",
+                model_used=body.get("model"),
+            )
+        return out
+
+
+def _normalize_openai_batch_status(provider_status: str) -> str:
+    """Map OpenAI Batch lifecycle to our normalized vocab."""
+    if provider_status == "completed":
+        return "ended"
+    if provider_status in ("failed", "expired", "cancelling", "cancelled"):
+        return "errored"
+    # validating | in_progress | finalizing
+    return "in_progress"
 
 
 def _assistant_message_to_dict(msg: Any) -> dict[str, Any]:

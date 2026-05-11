@@ -1,0 +1,11 @@
+{
+  "company_name": "Stripe, Inc.",
+  "notes": "Module 12 regression golden — Stripe's top competitors are well-known (Adyen, Block/Square, PayPal/Braintree). The goal here is verifying the model picks BIG_THREE that are actually direct payments-rail competitors and doesn't drift into adjacency (e.g. Plaid, which is a Stripe partner, not a competitor).",
+  "module_12_competitor_snapshot": {
+    "expected": {
+      "competitors": ["Adyen", "Block", "PayPal"],
+      "confidence": "high"
+    },
+    "expected_confidence": "high"
+  }
+}

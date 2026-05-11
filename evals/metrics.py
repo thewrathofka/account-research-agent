@@ -33,10 +33,15 @@ class CaseScore:
     e1_schema: bool          # passes/fails
     e2_coverage: float       # 0.0–1.0
     e3_calibration: bool     # True iff high-confidence output matches golden
-    e4_sources_ok: bool      # all cited URLs look like real URLs
+    e4_sources_ok: bool      # all cited URLs are real and observed via tools
     e5_input_tokens: int
     e5_output_tokens: int
     e5_search_count: int
+    # Fix Appendix #18 — penalize chronic under-confidence on high-confidence cases.
+    e6_underconfidence: bool = True
+    # Fix Appendix #19 — measured per-case cost (USD); compared to MAX_COST budget.
+    e7_cost_usd: float = 0.0
+    e7_within_budget: bool = True
     notes: list[str] = field(default_factory=list)
 
 
@@ -71,6 +76,18 @@ class TaskScore:
         return sum(1 for c in self.cases if c.e4_sources_ok) / len(self.cases)
 
     @property
+    def underconfidence_pass_rate(self) -> float:
+        if not self.cases:
+            return 0.0
+        return sum(1 for c in self.cases if c.e6_underconfidence) / len(self.cases)
+
+    @property
+    def cost_within_budget_rate(self) -> float:
+        if not self.cases:
+            return 0.0
+        return sum(1 for c in self.cases if c.e7_within_budget) / len(self.cases)
+
+    @property
     def mean_input_tokens(self) -> float:
         return sum(c.e5_input_tokens for c in self.cases) / max(1, len(self.cases))
 
@@ -89,6 +106,8 @@ THRESHOLDS = {
     "field_coverage": 0.80,
     "confidence_calibration": 0.90,
     "source_verification": 0.98,
+    "underconfidence": 0.90,        # Fix Appendix #18
+    "cost_within_budget": 0.95,     # Fix Appendix #19
 }
 
 
@@ -157,12 +176,19 @@ def score_confidence_calibration(
     return len(mismatches) == 0, mismatches
 
 
-def score_source_verification(output: dict[str, Any] | None) -> bool:
-    """E4: every cited URL must look like a real URL (http(s) scheme + dotted host).
+def score_source_verification(
+    output: dict[str, Any] | None,
+    observed_urls: set[str] | None = None,
+) -> bool:
+    """E4: every cited URL must (a) look like a real URL and (b) be a subset of
+    the URLs the model actually saw via its tools (Fix Appendix #6).
 
-    True E4 (verifying URLs appeared in tool results) needs run-log enrichment
-    to record `tool_results_seen` per task. Tracked for v0.2.0; this v0.1.0
-    placeholder catches the most common hallucination pattern (made-up domains).
+    URL-shape alone was passing hallucinated-but-realistic domains. Subset-vs-
+    observed catches the case directly.
+
+    When `observed_urls` is None (offline replay against an old run that didn't
+    record tool_results_seen), fall back to URL-shape only and emit no false
+    failures; the run will simply not benefit from the stricter check.
     """
     if output is None:
         return False
@@ -170,7 +196,44 @@ def score_source_verification(output: dict[str, Any] | None) -> bool:
     if not sources:
         return False
     url_re = re.compile(r"^https?://[^/\s]+\.[^/\s]+")
-    return all(url_re.match(s) for s in sources)
+    if not all(url_re.match(s) for s in sources):
+        return False
+    if observed_urls is None:
+        return True
+    return set(sources).issubset(observed_urls)
+
+
+def score_source_verification_against_observed(
+    output: dict[str, Any] | None, observed_urls: set[str],
+) -> bool:
+    """Strict E4 helper: the output's sources must be a subset of observed_urls.
+
+    Mirrors the appendix snippet exactly. Use directly in tests where you want
+    the strict check independent of URL-shape concerns.
+    """
+    sources = set((output or {}).get("sources", []) or [])
+    return bool(sources) and sources.issubset(observed_urls)
+
+
+def score_underconfidence(
+    output: dict[str, Any] | None,
+    golden: dict[str, Any],
+) -> bool:
+    """E6: Fix Appendix #18 — penalize chronic under-confidence.
+
+    Returns True when:
+      - golden specifies expected_confidence="high" and the output also says "high", OR
+      - golden does NOT specify expected_confidence (the case is not high-stakes).
+
+    Returns False when the golden expected high but the model hedged — i.e. the
+    model had enough evidence to commit and chose not to. Combined with E3
+    (penalising over-claims), this gates BOTH directions of miscalibration.
+    """
+    if output is None:
+        return False
+    if golden.get("expected_confidence") != "high":
+        return True
+    return output.get("confidence") == "high"
 
 
 def _values_match(actual: Any, expected: Any) -> bool:

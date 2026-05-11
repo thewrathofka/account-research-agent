@@ -41,6 +41,7 @@ from evals.metrics import (
     THRESHOLDS, CaseScore, TaskScore,
     score_confidence_calibration, score_field_coverage,
     score_schema_compliance, score_source_verification,
+    score_underconfidence,
 )
 from providers import get_provider
 from tasks import TASK_REGISTRY
@@ -115,12 +116,20 @@ def run_eval(task_name: str, provider_name: str | None = None,
         if not golden:
             continue
 
+        observed_urls: set[str] | None = None
+        cost_usd = 0.0
+        model_used: str | None = None
+        cached_tokens = 0
+
         if offline:
             # Synthesize an output by reading from a sidecar file evals/golden/<slug>.<task>.actual.json
             # if present. Useful for replaying a previous live run without re-charging.
             actual_path = GOLDEN_DIR / f"{gc.slug}.{task_name}.actual.json"
             output = json.loads(actual_path.read_text()) if actual_path.exists() else None
             input_tokens = output_tokens = search_count = 0
+            observed_path = GOLDEN_DIR / f"{gc.slug}.{task_name}.observed.json"
+            if observed_path.exists():
+                observed_urls = set(json.loads(observed_path.read_text()))
         else:
             task = TASK_REGISTRY[task_name]()
             print(f"  Running {task_name} on {gc.company_name}…", flush=True)
@@ -129,15 +138,34 @@ def run_eval(task_name: str, provider_name: str | None = None,
             input_tokens = result.input_tokens
             output_tokens = result.output_tokens
             search_count = result.search_count
+            observed_urls = set(result.tool_results_seen) if result.tool_results_seen else set()
+            model_used = result.model_used
+            cached_tokens = result.cached_input_tokens
             # Persist for offline replay.
             if output is not None:
                 actual_path = GOLDEN_DIR / f"{gc.slug}.{task_name}.actual.json"
                 actual_path.write_text(json.dumps(output, indent=2, ensure_ascii=False))
+            if observed_urls:
+                observed_path = GOLDEN_DIR / f"{gc.slug}.{task_name}.observed.json"
+                observed_path.write_text(json.dumps(sorted(observed_urls), indent=2))
+
+        # Cost regression gate (Fix Appendix #19). Compute USD cost from token
+        # counters and compare against the per-task budget.
+        import config as _config
+        cost_usd = _config.estimate_usd_cost(
+            input_tokens, output_tokens, model_used, cached_input_tokens=cached_tokens,
+        )
+        budget = _config.MAX_COST.get(task_name)
+        within_budget = (
+            budget is None
+            or cost_usd <= budget * (1.0 + _config.COST_REGRESSION_OVERAGE)
+        )
 
         e1 = score_schema_compliance(output, schema)
         e2 = score_field_coverage(output, schema)
         e3, mismatches = score_confidence_calibration(output, golden)
-        e4 = score_source_verification(output)
+        e4 = score_source_verification(output, observed_urls)
+        e6 = score_underconfidence(output, golden)
 
         notes = []
         if not e1:
@@ -145,13 +173,26 @@ def run_eval(task_name: str, provider_name: str | None = None,
         if mismatches:
             notes.append("E3 mismatches: " + "; ".join(mismatches[:3]))
         if not e4:
-            notes.append("E4 fail: missing or malformed source URLs")
+            if observed_urls is not None and not set((output or {}).get("sources", []) or []).issubset(observed_urls):
+                notes.append("E4 fail: cited URLs not seen in tool results")
+            else:
+                notes.append("E4 fail: missing or malformed source URLs")
+        if not e6:
+            notes.append("E6 fail: model under-confident on a high-confidence golden")
+        if not within_budget:
+            notes.append(
+                f"E7 fail: cost ${cost_usd:.4f} exceeds budget ${budget:.4f} "
+                f"× {1+_config.COST_REGRESSION_OVERAGE:.2f}"
+            )
 
         case_scores.append(CaseScore(
             case_name=gc.slug, e1_schema=e1, e2_coverage=e2,
             e3_calibration=e3, e4_sources_ok=e4,
             e5_input_tokens=input_tokens, e5_output_tokens=output_tokens,
-            e5_search_count=search_count, notes=notes,
+            e5_search_count=search_count,
+            e6_underconfidence=e6,
+            e7_cost_usd=cost_usd, e7_within_budget=within_budget,
+            notes=notes,
         ))
 
     return TaskScore(task_name=task_name, cases=case_scores)
@@ -175,6 +216,10 @@ def print_score(score: TaskScore, provider_name: str) -> None:
             flags.append("E3")
         if not c.e4_sources_ok:
             flags.append("E4")
+        if not c.e6_underconfidence:
+            flags.append("E6")
+        if not c.e7_within_budget:
+            flags.append(f"E7=${c.e7_cost_usd:.3f}")
         status = "PASS" if not flags else f"FAIL ({','.join(flags)})"
         print(f"  {c.case_name:20s} {status}")
         for n in c.notes:
@@ -187,6 +232,8 @@ def print_score(score: TaskScore, provider_name: str) -> None:
         ("Field coverage",       score.mean_field_coverage,   THRESHOLDS["field_coverage"]),
         ("Confidence calibration", score.confidence_calibration, THRESHOLDS["confidence_calibration"]),
         ("Source verification",  score.source_verification,   THRESHOLDS["source_verification"]),
+        ("Under-confidence pass", score.underconfidence_pass_rate, THRESHOLDS.get("underconfidence", 0.90)),
+        ("Cost within budget",   score.cost_within_budget_rate, THRESHOLDS.get("cost_within_budget", 0.95)),
     ]
     for label, value, threshold in metrics:
         passing = value >= threshold
@@ -214,6 +261,8 @@ def write_markdown_summary(score: TaskScore, provider_name: str,
         f"- Field coverage:    {score.mean_field_coverage:.1%}",
         f"- Confidence calibration: {score.confidence_calibration:.1%}",
         f"- Source verification: {score.source_verification:.1%}",
+        f"- Under-confidence pass rate: {score.underconfidence_pass_rate:.1%}",
+        f"- Cost within budget rate: {score.cost_within_budget_rate:.1%}",
         f"- Mean tokens/case:  in={score.mean_input_tokens:,.0f}  out={score.mean_output_tokens:,.0f}",
         f"- Mean searches/case: {score.mean_searches:.1f}",
         "",
@@ -229,6 +278,10 @@ def write_markdown_summary(score: TaskScore, provider_name: str,
             flags.append("E3")
         if not c.e4_sources_ok:
             flags.append("E4")
+        if not c.e6_underconfidence:
+            flags.append("E6")
+        if not c.e7_within_budget:
+            flags.append(f"E7=${c.e7_cost_usd:.3f}")
         verdict = "PASS" if not flags else f"FAIL ({','.join(flags)})"
         lines.append(f"- **{c.case_name}**: {verdict}")
         for n in c.notes:

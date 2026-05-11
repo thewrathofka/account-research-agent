@@ -14,6 +14,7 @@ from anthropic import Anthropic
 
 import config
 from providers.base import BatchHandle, BatchRequest, LLMProvider, ProviderResult
+from rate_limit import ANTHROPIC_LIMITER
 from tools.base import Tool
 
 
@@ -65,13 +66,14 @@ class AnthropicProvider(LLMProvider):
 
         try:
             for iteration in range(1, max_iterations + 1):
-                response = self.client.messages.create(
-                    model=model,
-                    max_tokens=config.MAX_TOKENS,
-                    system=system_blocks,
-                    tools=tool_specs,
-                    messages=messages,
-                )
+                with ANTHROPIC_LIMITER:
+                    response = self.client.messages.create(
+                        model=model,
+                        max_tokens=config.MAX_TOKENS,
+                        system=system_blocks,
+                        tools=tool_specs,
+                        messages=messages,
+                    )
                 input_tokens += response.usage.input_tokens
                 output_tokens += response.usage.output_tokens
                 # Track cache hits for cost telemetry.
@@ -168,7 +170,8 @@ class AnthropicProvider(LLMProvider):
                     "messages": [{"role": "user", "content": r.user_message}],
                 },
             ))
-        batch = self.client.messages.batches.create(requests=batch_requests)
+        with ANTHROPIC_LIMITER:
+            batch = self.client.messages.batches.create(requests=batch_requests)
         return BatchHandle(
             batch_id=batch.id,
             provider_name=self.name,
@@ -179,13 +182,16 @@ class AnthropicProvider(LLMProvider):
 
     def poll_batch(self, handle: BatchHandle) -> str:
         """Return normalized status: "in_progress" | "ended" | "errored"."""
-        batch = self.client.messages.batches.retrieve(message_batch_id=handle.batch_id)
+        with ANTHROPIC_LIMITER:
+            batch = self.client.messages.batches.retrieve(message_batch_id=handle.batch_id)
         return _normalize_batch_status(batch.processing_status)
 
     def fetch_batch_results(self, handle: BatchHandle) -> dict[str, ProviderResult]:
         """Pull results JSONL stream and parse into per-custom_id ProviderResults."""
         results: dict[str, ProviderResult] = {}
-        for entry in self.client.messages.batches.results(message_batch_id=handle.batch_id):
+        with ANTHROPIC_LIMITER:
+            entries = list(self.client.messages.batches.results(message_batch_id=handle.batch_id))
+        for entry in entries:
             custom_id = entry.custom_id
             res = entry.result
             if res.type == "succeeded":

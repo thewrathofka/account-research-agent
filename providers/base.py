@@ -7,10 +7,40 @@ never see SDK-specific objects. Swapping providers is a one-line change in
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 from tools.base import Tool
+
+
+# ---- Provider-neutral request shape (Fix Appendix #22) ----
+# Tasks build a ProviderRequest; provider adapters translate it into their
+# SDK-specific call. ToolSpec is the lossless representation of a tool.
+
+@dataclass
+class ToolSpec:
+    """Provider-neutral tool description. Adapters translate this to their format
+    (Anthropic `tools` array, OpenAI `function`, Gemini `FunctionDeclaration`)."""
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
+@dataclass
+class ProviderRequest:
+    """One model request, provider-neutral. Used for batch and one-shot synthesis.
+
+    For tool-using loops, provider adapters still consume Tool instances directly
+    (because tools must be invoked, not just declared). For pure synthesis (no
+    tools, no agent loop), this is the canonical shape.
+    """
+    system_prompt: str
+    user_message: str
+    tools: list[ToolSpec] = field(default_factory=list)
+    model_tier: str = "smart"
+    max_iterations: int = 10
+    json_schema: dict[str, Any] | None = None
+    max_tokens: int | None = None
 
 
 @dataclass

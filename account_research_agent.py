@@ -73,6 +73,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     crm = NotionCRM()
+    # Fail loudly if Notion's schema drifted from EXPECTED_NOTION_PROPERTIES
+    # (Fix Appendix #20). Better to halt now than write garbage to Notion.
+    try:
+        crm.validate_schema()
+    except RuntimeError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 2
     run_log = RunLog(args.db)
     provider = get_provider(args.provider)
 

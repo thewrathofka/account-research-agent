@@ -58,12 +58,12 @@ PROVIDER_NAME = os.getenv("PROVIDER", "anthropic")
 # Provider adapters map tier → provider-specific model. Falls back to "smart" if a
 # tier is unknown.
 ANTHROPIC_MODELS = {
-    "smart": "claude-sonnet-4-5",
+    "smart": "claude-sonnet-4-6",
     "fast": "claude-haiku-4-5",
 }
 OPENAI_MODELS = {
-    "smart": "gpt-4.1",
-    "fast": "gpt-4.1-mini",
+    "smart": "gpt-5.5",
+    "fast": "gpt-5.5-mini",
 }
 GEMINI_MODELS = {
     "smart": "gemini-2.5-pro",
@@ -85,5 +85,68 @@ MAX_AGENT_ITERATIONS = 10
 # ---- Concurrency + cost gates ----
 DEFAULT_CONCURRENCY = 5
 TAVILY_SEARCHES_PER_TASK_CAP = 8
+
+# Per-task and per-account cost budgets in USD (Fix Appendix #19).
+# Numbers reflect Sonnet-4.5 + Haiku-4.5 pricing observed in v0.3.0 baseline.
+# Eval runner fails if a measured task cost exceeds budget by >20%.
+MAX_COST: dict[str, float] = {
+    "module_01_gate": 0.04,
+    "research_pass": 0.06,
+    "module_03_revenue_model": 0.02,
+    "module_05_corporate_structure": 0.02,
+    "module_06_structural_news": 0.02,
+    "module_07_trigger_events": 0.03,
+    "module_09_creative_reality": 0.05,
+    "module_12_competitor_snapshot": 0.02,
+    "module_13_industry_pulse": 0.02,
+    "module_14_hiring_signal": 0.05,
+    "company_overview": 0.04,
+    "_account_total": 0.30,  # ceiling per account across all tasks
+}
+COST_REGRESSION_OVERAGE = 0.20  # 20% headroom before failing the eval
+
+# Per-1M-token rates by tier-resolved model name. Used by evals to translate the
+# token counters from the run log into a USD cost estimate.
+MODEL_PRICING_PER_M_TOKENS: dict[str, dict[str, float]] = {
+    # Anthropic — Sonnet 4.6 (current smart tier) + Haiku 4.5 (fast tier).
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cached_input": 0.30},
+    "claude-haiku-4-5":  {"input": 1.00, "output": 5.00,  "cached_input": 0.10},
+    # OpenAI — gpt-5.5 (smart) + gpt-5.5-mini (fast). Update once final pricing
+    # is confirmed; current numbers carry forward gpt-4.1's per-M cost as a
+    # placeholder so cost-regression evals don't no-op against unknown models.
+    "gpt-5.5":           {"input": 2.00, "output": 8.00,  "cached_input": 0.50},
+    "gpt-5.5-mini":      {"input": 0.40, "output": 1.60,  "cached_input": 0.10},
+    # Google — Gemini 2.5
+    "gemini-2.5-pro":    {"input": 3.50, "output": 10.50, "cached_input": 0.875},
+    "gemini-2.5-flash":  {"input": 0.30, "output": 2.50,  "cached_input": 0.075},
+}
+
+
+def estimate_usd_cost(
+    input_tokens: int,
+    output_tokens: int,
+    model_used: str | None,
+    cached_input_tokens: int = 0,
+) -> float:
+    """Return per-call USD cost using MODEL_PRICING_PER_M_TOKENS, or 0.0 if unknown.
+
+    `cached_input_tokens` are billed at the cached rate; the rest of input_tokens
+    at the full input rate. When model_used is missing or unmapped we return 0.0
+    rather than guessing — the eval will silently treat this case as within
+    budget, which is fine because the budget gate only fires when we KNOW we
+    overshot.
+    """
+    if not model_used:
+        return 0.0
+    pricing = MODEL_PRICING_PER_M_TOKENS.get(model_used)
+    if pricing is None:
+        return 0.0
+    fresh_input = max(0, input_tokens - cached_input_tokens)
+    return (
+        fresh_input * pricing["input"] / 1_000_000
+        + cached_input_tokens * pricing.get("cached_input", pricing["input"]) / 1_000_000
+        + output_tokens * pricing["output"] / 1_000_000
+    )
+
 
 _validate_keys()

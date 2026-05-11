@@ -18,13 +18,25 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
 from types import ModuleType
 from typing import Any
 
 import config
 from providers.base import LLMProvider
 from tools.base import Tool
+
+
+def _today_header() -> str:
+    """Absolute-date header prepended to every task's user message.
+
+    The model otherwise has no idea what "today" is and treats "last 6 months"
+    as relative to its training cutoff — which is exactly how 2024-vintage
+    "recent" news ended up in research outputs. Anchoring with an explicit
+    "Today is YYYY-MM-DD" line in the user turn fixes that without touching
+    each prompt's system text."""
+    return f"Today is {date.today().isoformat()}."
 
 
 @dataclass
@@ -45,6 +57,13 @@ class TaskResult:
     provider_name: str
     cached_input_tokens: int = 0        # tokens served from prompt cache
     model_used: str | None = None        # provider-specific model ("claude-haiku-4-5" etc.)
+    # Fix Appendix #6: URLs the model actually saw via tools, used to verify
+    # `output.sources ⊆ tool_results_seen` in evals. Empty list when no tools ran.
+    tool_results_seen: list[str] = field(default_factory=list)
+    # Per-detected-signal subsections rendered under News on the page body.
+    # Each item: {"signal": <PROP_BUYING_SIGNALS option>, "logic": str, "sources": list[str]}.
+    # Only modules that contribute to PROP_BUYING_SIGNALS populate this.
+    signal_sections: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
 
 
@@ -74,15 +93,28 @@ class Task:
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         return []
 
+    def to_signal_sections(self, output: dict[str, Any]) -> list[dict[str, Any]]:
+        """Per-detected-signal subsections appended under News.
+
+        Only tasks that write tags to PROP_BUYING_SIGNALS override this. Each entry:
+          {"signal": <signal name>, "logic": <1-3 sentences>, "sources": [url, ...]}.
+        Empty list when no signals detected this run.
+        """
+        return []
+
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Default: just ask the model to research the company. Subclasses override
         to inject prior-task context, which lets the agent skip redundant searches.
 
         Synthesis-only tasks use the helper below to fold ResearchPass output in.
+
+        Every task's user message is prefixed with `Today is YYYY-MM-DD.` so the
+        model can resolve relative time windows ("last 3 months") to absolute
+        dates instead of inheriting them from its training cutoff.
         """
         if self.synthesis_only:
             return self.synthesis_user_message(account_name, context)
-        return f"Research the company: {account_name}"
+        return f"{_today_header()}\n\nResearch the company: {account_name}"
 
     def synthesis_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Build a synthesis-only user message that embeds the shared research context.
@@ -101,6 +133,7 @@ class Task:
                 "leave fields null where you cannot verify."
             )
         return (
+            f"{_today_header()}\n\n"
             f"Company: {account_name}.\n\n"
             f"## Research context (from upfront research pass)\n\n"
             f"{research}\n\n"
@@ -150,6 +183,8 @@ class Task:
         )
         duration = time.time() - start
 
+        observed_urls = _collect_observed_urls(tools)
+
         if result.error or result.stop_reason != "end_turn":
             return TaskResult(
                 task_name=self.name, output=None, confidence="failed",
@@ -161,6 +196,7 @@ class Task:
                 prompt_version=prompt_version, provider_name=provider.name,
                 cached_input_tokens=result.cached_input_tokens,
                 model_used=result.model_used,
+                tool_results_seen=observed_urls,
                 error=result.error or f"stop_reason: {result.stop_reason}",
             )
 
@@ -176,6 +212,7 @@ class Task:
                 prompt_version=prompt_version, provider_name=provider.name,
                 cached_input_tokens=result.cached_input_tokens,
                 model_used=result.model_used,
+                tool_results_seen=observed_urls,
                 error=f"end_turn without JSON block:\n{result.text[:500]}",
             )
 
@@ -194,32 +231,91 @@ class Task:
             prompt_version=prompt_version, provider_name=provider.name,
             cached_input_tokens=result.cached_input_tokens,
             model_used=result.model_used,
+            tool_results_seen=observed_urls,
+            signal_sections=self.to_signal_sections(output),
         )
 
 
+def _collect_observed_urls(tools: list[Tool]) -> list[str]:
+    """Aggregate `observed_urls` across every tool that exposes the property,
+    de-duped while preserving first-seen order. Tools without the attribute
+    contribute nothing — keeps the contract opt-in for future tools."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for t in tools:
+        urls = getattr(t, "observed_urls", None)
+        if not urls:
+            continue
+        for u in urls:
+            if u and u not in seen:
+                seen.add(u)
+                out.append(u)
+    return out
+
+
 def _extract_json(text: str) -> dict[str, Any] | None:
-    """Pull a JSON object out of a ```json fenced block, falling back to the first
-    parseable {...} substring if no fence is found.
+    """Pull a JSON object out of model output.
+
+    Strategy (Fix Appendix #5):
+      1. Prefer a ```json fenced block — providers that follow the prompt put it there.
+      2. Fall back to bracket-balanced candidates. The previous regex `\\{.*?\\}` was
+         non-greedy and could capture a wrong slice on nested JSON (closes at the first
+         `}`). Bracket balancing finds every top-level `{...}` correctly, even with
+         nested objects/arrays and quoted braces inside strings.
 
     Includes a tolerant repair pass for common provider quirks observed in evals:
       - gpt-4.1 sometimes writes numeric ranges (e.g. `1000-5000`) as values where
         an integer is expected. Repair: replace `<number>-<number>` value with null.
       - Trailing commas before `]` or `}`.
-    Real fix lives in v1.1.0 prompts (explicit "no ranges" instruction).
     """
-    fenced = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    candidates: list[str] = []
-    if fenced:
-        candidates.append(fenced.group(1))
-    for match in re.finditer(r"\{.*?\}", text, re.DOTALL):
-        candidates.append(match.group(0))
-
+    candidates = _json_candidates(text)
     for candidate in candidates:
         for parser in (_strict_json, _repaired_json):
             result = parser(candidate)
             if result is not None:
                 return result
     return None
+
+
+def _json_candidates(text: str) -> list[str]:
+    """Return JSON candidate strings ordered most-trusted first.
+
+    A ```json fence is the most explicit signal the model has followed instructions;
+    bracket-balanced fallbacks let us recover when the model omits the fence.
+    """
+    fenced = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    if fenced:
+        return [fenced.group(1)]
+
+    candidates: list[str] = []
+    starts = [i for i, ch in enumerate(text) if ch == "{"]
+    for start in starts:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                    continue
+                if ch == "\\":
+                    escape = True
+                    continue
+                if ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[start:i + 1])
+                    break
+    return candidates
 
 
 def _strict_json(s: str) -> dict[str, Any] | None:

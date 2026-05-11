@@ -1,0 +1,13 @@
+{
+  "company_name": "Roblox",
+  "notes": "Stress case: large entertainment platform with significant US + EU presence (London, Amsterdam offices) but a media/gaming primary classification rather than B2B SaaS. Tests that the gate doesn't false-fail on non-classic-ICP companies that nonetheless meet the size + region criteria.",
+  "module_01_gate": {
+    "expected": {
+      "operates_in_eu": true,
+      "operates_in_na": true,
+      "operates_in_eu_or_na": true,
+      "confidence": "high"
+    },
+    "expected_confidence": "high"
+  }
+}

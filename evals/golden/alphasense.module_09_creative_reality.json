@@ -1,0 +1,12 @@
+{
+  "company_name": "AlphaSense",
+  "notes": "Stress case for module 9: AI-financial-research SaaS with significant marketing and content team. Tests that the model surfaces brand/content-marketing pain phrases in JD copy without inventing the agency relationships that don't actually exist (AlphaSense runs an in-house team).",
+  "module_09_creative_reality": {
+    "expected": {
+      "has_active_creative_jobs": true,
+      "agency_relationships": [],
+      "confidence": "high"
+    },
+    "expected_confidence": "high"
+  }
+}

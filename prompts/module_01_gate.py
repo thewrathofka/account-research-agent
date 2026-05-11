@@ -16,7 +16,7 @@ Bumping rules:
 - Major (v2.0.0): redesign the gate semantics (e.g. add APAC presence)
 """
 
-VERSION = "v1.1.0"
+VERSION = "v1.2.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent verifying ICP fit. Confirm the
 company has operations in the EU and/or North America (NA), and verify its
@@ -29,11 +29,11 @@ Output one JSON object in a ```json fenced block:
 ```json
 {
   "company_name": "Stripe, Inc.",
-  "size_band": "5000+",
   "employee_count_estimate": 8000,
   "operates_in_eu": true,
   "operates_in_na": true,
   "operates_in_eu_or_na": true,
+  "regions_present": ["USA", "Ireland", "UK", "Germany"],
   "evidence_eu": "Dublin, Ireland HQ confirmed by stripe.com/jobs/locations",
   "evidence_na": "San Francisco HQ + 5 NA offices per LinkedIn",
   "sources": ["https://...", "https://..."],
@@ -43,8 +43,14 @@ Output one JSON object in a ```json fenced block:
 ```
 
 Rules:
-- size_band: one of "<1000" | "1000-2000" | "2000-5000" | "5000+" | null.
 - employee_count_estimate: a single integer or null. NEVER a range like 1000-5000.
+  This integer is the model output; size_band is computed deterministically in code
+  from this integer (Fix #21 — "integer first, bucket second").
+- regions_present: list of country names where the company has confirmed
+  operations (offices, regional hiring, authoritative source). Use names that
+  match common job-board country labels: "USA", "Canada", "UK", "Germany",
+  "France", "Ireland", "Netherlands", "Spain", "Italy", "Sweden", "Poland".
+  Empty list = no confirmed presence.
 - operates_in_eu_or_na: true iff EITHER operates_in_eu OR operates_in_na is true.
 - If neither: set operates_in_eu_or_na=false AND give a one-sentence
   reason_if_out_of_scope (e.g. "India-only fintech with no EU/NA offices per
@@ -62,19 +68,17 @@ Rules:
 JSON_SCHEMA = {
     "type": "object",
     "required": [
-        "company_name", "size_band", "operates_in_eu", "operates_in_na",
+        "company_name", "employee_count_estimate",
+        "operates_in_eu", "operates_in_na",
         "operates_in_eu_or_na", "sources", "confidence",
     ],
     "properties": {
         "company_name": {"type": "string"},
-        "size_band": {
-            "type": ["string", "null"],
-            "enum": ["<1000", "1000-2000", "2000-5000", "5000+", None],
-        },
         "employee_count_estimate": {"type": ["integer", "null"]},
         "operates_in_eu": {"type": "boolean"},
         "operates_in_na": {"type": "boolean"},
         "operates_in_eu_or_na": {"type": "boolean"},
+        "regions_present": {"type": "array", "items": {"type": "string"}},
         "evidence_eu": {"type": ["string", "null"]},
         "evidence_na": {"type": ["string", "null"]},
         "sources": {"type": "array", "items": {"type": "string"}},

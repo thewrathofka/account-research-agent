@@ -1,0 +1,12 @@
+{
+  "company_name": "Oracle",
+  "notes": "Regression case for module 6 — Oracle announced a 30k-person reduction in March 2026. The expected note maps to the constrained vocab and the buying implication should map to 'buying-frozen'. Catches regressions where the model chooses 'restructuring' (vague) instead of 'mass layoffs' (specific) when the news clearly supports the latter.",
+  "module_06_structural_news": {
+    "expected": {
+      "structure_note": "mass layoffs",
+      "buying_implication": "buying-frozen",
+      "confidence": "high"
+    },
+    "expected_confidence": "high"
+  }
+}
