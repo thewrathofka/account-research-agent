@@ -28,7 +28,7 @@ from typing import Any
 
 try:
     from apify_client import ApifyClient
-    from apify_client._errors import ApifyApiError
+    from apify_client.errors import ApifyApiError
 except ImportError:  # pragma: no cover — only needed for live runs
     ApifyClient = None  # type: ignore
     ApifyApiError = Exception  # type: ignore
@@ -38,14 +38,23 @@ from rate_limit import APIFY_LIMITER
 from run_log import ToolCallCache
 
 
-# Bumped when the cache payload shape changes so old entries are treated as misses.
-APIFY_TOOL_VERSION = "apify_ad_scraper_v1"
+# Bumped when the cache payload shape changes OR when an actor's input shape
+# changes (so old cached "successes" that were actually no-ops because of a
+# wrong input shape don't keep being served).
+# v2: corrected LinkedIn input (searchQuery + dateRange) + TikTok actor swap.
+# v3: format/URL extractors recognise the actor field names (adFormat label,
+#     detailUrl, mediaUrl, etc.). Cached v1/v2 renders had "unknown: N" mix.
+APIFY_TOOL_VERSION = "apify_ad_scraper_v3"
 
 # Actor IDs. Constants so swapping a scraper is a one-line change.
+# TikTok: there is no official Apify-maintained TikTok Ad Library actor — we use
+# the community actor with the most runs as of 2026-05-11 (ivanvs, 6.1k runs).
+# It accepts pre-constructed library URLs only, so _build_actor_input synthesises
+# the URL from the company name + country code.
 ACTOR_IDS: dict[str, str] = {
     "linkedin": "automation-lab/linkedin-ad-library-scraper",
     "meta":     "automly/facebook-ad-library-scraper",
-    "tiktok":   "apify/tiktok-ads-scraper",
+    "tiktok":   "ivanvs/tiktok-ad-library-scraper",
 }
 
 SUPPORTED_PLATFORMS = tuple(ACTOR_IDS.keys())
@@ -234,28 +243,40 @@ def _build_actor_input(
 ) -> dict[str, Any]:
     """Translate the generic tool args into the actor's expected input shape.
 
-    Each Apify actor accepts a different schema. Centralised here so the
-    actor-specific knowledge does NOT leak into the tool's __call__ logic and
-    so swapping an actor (e.g. Meta switching scrapers) is a one-place change.
+    Each Apify actor accepts a different schema; centralised here so swapping
+    an actor (e.g. Meta switching scrapers) is a one-place change. Input shapes
+    captured 2026-05-11 from each actor's published build inputSchema.
     """
     if platform == "linkedin":
+        # `automation-lab/linkedin-ad-library-scraper` — searchQuery + dateRange.
+        # Spec §10 says 12-month window, so `past-year` rather than `past-month`.
         return {
-            "company_names": [company],
-            "max_results": max_results,
-            "country": country,
+            "searchQuery": company,
+            "maxAds": max_results,
+            "dateRange": "past-year",
+            "adFormat": "all",
         }
     if platform == "meta":
+        # `automly/facebook-ad-library-scraper` — searchTerms[] + country + maxAds.
         return {
             "searchTerms": [company],
             "country": country.upper(),
-            "maxItems": max_results,
+            "maxAds": max_results,
             "activeStatus": "active",
         }
     if platform == "tiktok":
+        # `ivanvs/tiktok-ad-library-scraper` accepts library URLs only — we
+        # synthesise the TikTok Ad Library search URL from the company name.
+        from urllib.parse import quote_plus
+        adv_name = quote_plus(company)
+        region = country.upper()
+        url = (
+            f"https://library.tiktok.com/ads?region={region}"
+            f"&adv_name={adv_name}&query_type=2&sort_type=last_shown_date,desc"
+        )
         return {
-            "advertiserName": company,
-            "country": country.upper(),
-            "maxItems": max_results,
+            "urls": [{"url": url}],
+            "maxRecords": max_results,
         }
     raise ValueError(f"Unsupported platform: {platform}")
 
@@ -264,37 +285,60 @@ def _build_actor_input(
 
 # Maps actor-side type strings → our canonical format vocabulary.
 # Each actor returns its own naming; we normalise so the rendered output has a
-# single shape regardless of source.
-_FORMAT_NORMALISE: dict[str, str] = {
+# single shape regardless of source. Keys are lowercased; partial-match keys
+# (e.g. "image" → "static") are tried after exact matches.
+_FORMAT_EXACT: dict[str, str] = {
     "image": "static", "static": "static", "photo": "static",
     "video": "video", "motion": "motion",
     "carousel": "carousel", "slideshow": "carousel",
     "single_image": "static", "single_video": "video",
+    "single image ad": "static", "video ad": "video",
+    "carousel ad": "carousel", "spotlight ad": "static",
+    "text ad": "text", "follower ad": "static",
+    "message ad": "static", "conversation ad": "static",
+    "document ad": "document", "event ad": "static",
+    "thought leader ad": "static",
 }
+
+_FORMAT_SUBSTRING_RULES: list[tuple[str, str]] = [
+    ("video", "video"), ("carousel", "carousel"),
+    ("image", "static"), ("photo", "static"),
+    ("document", "document"), ("text", "text"),
+]
 
 
 def _normalise_format(raw: str | None) -> str:
     if not raw:
         return "unknown"
     key = str(raw).lower().strip()
-    return _FORMAT_NORMALISE.get(key, key)
+    if key in _FORMAT_EXACT:
+        return _FORMAT_EXACT[key]
+    for needle, canonical in _FORMAT_SUBSTRING_RULES:
+        if needle in key:
+            return canonical
+    return key  # last-resort: hand the actor's label through unchanged
 
 
 def _extract_format(item: dict[str, Any]) -> str:
-    for key in ("media_type", "ad_type", "format", "creative_type", "type"):
+    # Field names span actors: adFormat (LinkedIn), media_type / mediaType (Meta),
+    # creative_type, type, format.
+    for key in ("adFormat", "ad_format", "media_type", "mediaType",
+                "ad_type", "format", "creative_type", "type"):
         if key in item and item[key]:
             return _normalise_format(str(item[key]))
-    if item.get("video_url"):
+    if item.get("videoUrl") or item.get("video_url") or item.get("videoDuration"):
         return "video"
-    if item.get("carousel") or item.get("cards"):
+    if item.get("carouselCards") or item.get("carousel") or item.get("cards"):
         return "carousel"
-    if item.get("image_url") or item.get("image"):
+    if item.get("imageUrl") or item.get("image_url") or item.get("mediaUrl") or item.get("image"):
         return "static"
     return "unknown"
 
 
 def _extract_url(item: dict[str, Any]) -> str | None:
-    for key in ("ad_url", "url", "permalink", "link", "ad_permalink"):
+    # Actors use a mix: detailUrl (LinkedIn), permalink (Meta), ad_url, url.
+    for key in ("detailUrl", "ad_url", "permalink", "ad_permalink",
+                "url", "link", "ctaUrl"):
         v = item.get(key)
         if v:
             return str(v)

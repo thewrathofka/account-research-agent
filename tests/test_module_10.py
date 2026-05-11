@@ -88,9 +88,16 @@ def test_tool_rejects_unknown_platform() -> None:
 
 
 def test_tool_hard_caps_at_config_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Cap (Fix Appendix #10) returns an ERROR pre-call, no extra increment."""
+    """Cap (Fix Appendix #10) returns an ERROR pre-call, no extra increment.
+
+    APIFY_API_KEY is cleared so the first two calls take the NOT-CONFIGURED
+    branch and do not actually hit the network — otherwise this test burns
+    real Apify compute credit on every run.
+    """
     monkeypatch.setattr(config, "APIFY_CALLS_PER_TASK_CAP", 2)
+    monkeypatch.setattr(config, "APIFY_API_KEY", None)
     tool = ApifyAdScraperTool()
+    assert tool.client is None  # confirms we're in offline mode
     tool(platform="linkedin", company="A")
     tool(platform="linkedin", company="B")
     capped = tool(platform="linkedin", company="C")
