@@ -10,6 +10,7 @@ from tasks._legacy import CompanyOverview
 from tasks.base import Task, TaskResult
 from tasks.module_01 import Module01Gate
 from tasks.module_03 import Module03RevenueModel
+from tasks.module_04 import Module04PainPoints
 from tasks.module_05 import Module05CorporateStructure
 from tasks.module_06 import Module06StructuralNews
 from tasks.module_07 import Module07TriggerEvents
@@ -26,6 +27,7 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "research_pass": ResearchPass,
     "module_01_gate": Module01Gate,
     "module_03_revenue_model": Module03RevenueModel,
+    "module_04_pain_points": Module04PainPoints,
     "module_05_corporate_structure": Module05CorporateStructure,
     "module_06_structural_news": Module06StructuralNews,
     "module_07_trigger_events": Module07TriggerEvents,
@@ -55,9 +57,11 @@ PHASE1_TASKS = [
     "module_14_hiring_signal",
 ]
 
-# Phase 2 — adds module 10 (ad library) and (eventually) module 4 (pain points).
-# Module 10 runs AFTER module 9 so the creative-posture context (in-house signal +
-# named agencies) is in the envelope when it classifies audience.
+# Phase 2 — module 10 (ad library) + module 4 (pain-point synthesis).
+# Order matters: module 04 runs LAST because it synthesizes from modules 1, 3,
+# 7, 9, 10, 14 outputs — all of which must already be in the context envelope.
+# Module 10 runs after module 9 so creative-posture context (in-house signal +
+# named agencies) is in the envelope when module 10 classifies audience.
 PHASE2_TASKS = [
     "module_01_gate",
     "research_pass",
@@ -70,6 +74,7 @@ PHASE2_TASKS = [
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
     "module_14_hiring_signal",
+    "module_04_pain_points",
 ]
 
 # Tasks that act as gates — if their gate_passes() returns False, downstream

@@ -109,8 +109,9 @@ MAX_COST: dict[str, float] = {
     "module_13_industry_pulse": 0.02,
     "module_14_hiring_signal": 0.05,
     "module_10_ad_library": 0.06,  # Phase 2 — token cost; Apify tool cost separate
+    "module_04_pain_points": 0.04,  # Phase 2b — synthesis-only, single LLM call
     "company_overview": 0.04,
-    "_account_total": 0.35,  # ceiling per account across all tasks (bumped for module 10)
+    "_account_total": 0.40,  # ceiling per account across all tasks (bumped for modules 4 + 10)
 }
 COST_REGRESSION_OVERAGE = 0.20  # 20% headroom before failing the eval
 

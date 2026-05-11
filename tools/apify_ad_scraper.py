@@ -185,24 +185,25 @@ class ApifyAdScraperTool:
             "tool_version": APIFY_TOOL_VERSION,
         }
 
-        # Cache lookup first.
-        cached = self.cache.lookup(self.name, args)
-        if cached is not None:
-            self._cache_hits += 1
-            self._record_urls(_extract_urls(cached))
-            return cached
-
-        # Graceful degrade if Apify isn't wired up yet — let the task still
-        # produce a valid (low-confidence) output rather than hard-failing.
+        # Graceful degrade if Apify isn't wired up yet — checked BEFORE the
+        # cache lookup so a degraded run is honest about its state. Otherwise
+        # a stale cache hit from a previously-keyed run would mask the missing
+        # key, and the agent would silently produce confident output from
+        # week-old data.
         if self.client is None:
-            text = (
+            return (
                 f"NOT CONFIGURED: APIFY_API_KEY missing. "
                 f"Cannot query {platform} ads for {company}. "
                 "Treat as ads_running=0 with confidence='low' and note that "
                 "ad-library data is unavailable for this run."
             )
-            # No cache — once Apify is configured we want immediate live data.
-            return text
+
+        # Cache lookup first (we have a client → cached data is trustworthy).
+        cached = self.cache.lookup(self.name, args)
+        if cached is not None:
+            self._cache_hits += 1
+            self._record_urls(_extract_urls(cached))
+            return cached
 
         actor_id = ACTOR_IDS[platform]
         run_input = _build_actor_input(platform, company, country, max_results)

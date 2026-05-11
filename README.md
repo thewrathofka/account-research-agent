@@ -86,7 +86,8 @@ or `providers/openai_provider.py` and translate to Gemini's `functionCall` /
 | `module_12_competitor_snapshot` | Top 3 direct competitors | Page-body Competitor Landscape |
 | `module_13_industry_pulse` | Recent category-level stories | Adds to Competitor Landscape; `Buying Intent: industry movement` |
 | `module_14_hiring_signal` | Active hiring (creative/marketing) or layoffs | `Buying Signals: hiring` or `downsizing`; Headcount sub-section |
-| `module_10_ad_library` *(Phase 2)* | Ads running on LinkedIn (always) + Meta / TikTok (gated by audience) | Page-body `Creative Posture → Ads Running` bullets, per-platform count + format mix + volume |
+| `module_10_ad_library` *(Phase 2a)* | Ads running on LinkedIn (always) + Meta / TikTok (gated by audience) | Page-body `Creative Posture → Ads Running` bullets, per-platform count + format mix + volume |
+| `module_04_pain_points` *(Phase 2b)* | Synthesizes 2-4 grounded pain hypotheses from modules 1, 3, 7, 9, 10, 14 outputs | Page-body `Possible Pain Points` bullets, each pain mapped to one of 6 Superside value-prop angles with cited grounding data |
 
 Page-body sections are always assembled in this order:
 **Overview → Possible Pain Points → News → Creative Posture → Competitor Landscape → Sources**
@@ -192,7 +193,7 @@ on OpenAI gpt-4.1.
 
 - ✅ Module 10 (ad library — LinkedIn always; Meta/TikTok gated by audience classification) — shipped 2026-05-11
 - ✅ Apify integration with cost gates + graceful degrade (`APIFY_API_KEY` optional) — shipped 2026-05-11
-- Module 4 (pain-point synthesis from modules 1, 3, 9, 10, 14 outputs) — Phase 2b
+- ✅ Module 4 (pain-point synthesis from modules 1, 3, 7, 9, 10, 14 outputs) — shipped 2026-05-11
 - Cross-provider eval comparison run on the full pipeline
 
 ## Phase 3 (handoff hardening)
