@@ -21,6 +21,9 @@ class Module07TriggerEvents(Task):
     subsection = None
     prompt_module = prompt
     synthesis_only = True   # reads ResearchPass output, no own tools
+    model_tier = "fast"     # 2026-05-12 cost-cutting: trigger detection (funding /
+                            # rebrand / agency switch / AI initiative) is keyword-
+                            # adjacent extraction from research_pass, Haiku handles
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         triggers = output.get("triggers_detected") or []

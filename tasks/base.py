@@ -35,8 +35,34 @@ def _today_header() -> str:
     as relative to its training cutoff — which is exactly how 2024-vintage
     "recent" news ended up in research outputs. Anchoring with an explicit
     "Today is YYYY-MM-DD" line in the user turn fixes that without touching
-    each prompt's system text."""
-    return f"Today is {date.today().isoformat()}."
+    each prompt's system text.
+
+    v2 (2026-05-12): also spell out the three news-recency cutoff dates so
+    the model doesn't have to do date math and can't misread "12 months
+    ago" as "early 2024" when today is mid-2026. Recency tiers:
+      - 12 months: big structural events (M&A, IPO, bankruptcy, layoffs,
+        major leadership change) — items dated before this MUST be dropped.
+      - 6 months: relevant non-structural news (smaller events, product
+        launches, regional moves).
+      - 90 days: time-sensitive buying signals (funding round, rebrand,
+        agency switch, AI initiative, hiring posture).
+    """
+    from datetime import timedelta
+    today = date.today()
+    twelve_mo = (today - timedelta(days=365)).isoformat()
+    six_mo = (today - timedelta(days=183)).isoformat()
+    ninety_d = (today - timedelta(days=90)).isoformat()
+    return (
+        f"Today is {today.isoformat()}.\n"
+        f"News-recency cutoffs (drop ANY item older than the applicable cutoff):\n"
+        f"  - 12-month cutoff (big events): {twelve_mo}\n"
+        f"  - 6-month cutoff (relevant news): {six_mo}\n"
+        f"  - 90-day cutoff (buying signals): {ninety_d}\n"
+        f"DO NOT trust your training-data freshness — the cutoffs above are "
+        f"the only valid anchor. Items dated 2024 or earlier are out of scope "
+        f"unless they're documented STILL-ACTIVE structural state (e.g. a 2023 "
+        f"merger that's still the current corporate structure)."
+    )
 
 
 @dataclass
@@ -98,6 +124,18 @@ class Task:
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         return []
+
+    def post_parse(self, raw_text: str, output: dict[str, Any]) -> dict[str, Any]:
+        """Optional enrichment of the parsed JSON dict from the raw model output.
+
+        Default no-op. ResearchPass overrides to pull a delimited prose block
+        (raw_research) out of `raw_text` — keeping bulky markdown OUT of the
+        JSON avoids string-escape bugs that broke Mendix and Roblox runs on
+        2026-05-12 (unescaped `"` inside a multi-line `raw_research` string
+        flipped the bracket-balanced parser's `in_string` state and made the
+        whole JSON unrecoverable, even though output_tokens were under cap).
+        """
+        return output
 
     def to_signal_sections(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         """Per-detected-signal subsections appended under News.
@@ -219,8 +257,10 @@ class Task:
                 cached_input_tokens=result.cached_input_tokens,
                 model_used=result.model_used,
                 tool_results_seen=observed_urls,
-                error=f"end_turn without JSON block:\n{result.text[:500]}",
+                error=f"end_turn without JSON block:\n{result.text[:800]}",
             )
+
+        output = self.post_parse(result.text, output)
 
         confidence = output.get("confidence", "low")
         if confidence not in {"high", "medium", "low"}:
@@ -324,12 +364,34 @@ def _extract_json(text: str) -> dict[str, Any] | None:
 def _json_candidates(text: str) -> list[str]:
     """Return JSON candidate strings ordered most-trusted first.
 
-    A ```json fence is the most explicit signal the model has followed instructions;
-    bracket-balanced fallbacks let us recover when the model omits the fence.
+    A ```json fence is the most explicit signal the model has followed
+    instructions; bracket-balanced fallbacks let us recover when the model
+    omits the fence.
+
+    Three tiers (2026-05-12 hardening):
+      1. Closed fenced block: ```json...``` — strongest signal.
+      2. Open fenced block: ```json with no closing fence — happens when
+         the model wraps the JSON in a fence but forgets to close it. We
+         scan from the first `{` after ```json and walk to the matching `}`.
+      3. Bracket-balanced fallback over the whole text — handles models
+         that emit the JSON without any fence at all.
     """
     fenced = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
     if fenced:
         return [fenced.group(1)]
+
+    # Tier 2: open fenced block. Find the ```json marker, then scan from the
+    # first `{` after it to its matching closing brace. Handles "wrote a
+    # fence opener, forgot the closer" cases (intermittent end_turn quirk
+    # observed in production runs).
+    open_fence = re.search(r"```json\s*", text)
+    if open_fence:
+        rest = text[open_fence.end():]
+        first_brace = rest.find("{")
+        if first_brace >= 0:
+            candidate = _walk_balanced_object(rest[first_brace:])
+            if candidate:
+                return [candidate]
 
     candidates: list[str] = []
     starts = [i for i, ch in enumerate(text) if ch == "{"]
@@ -360,6 +422,40 @@ def _json_candidates(text: str) -> list[str]:
                     candidates.append(text[start:i + 1])
                     break
     return candidates
+
+
+def _walk_balanced_object(s: str) -> str | None:
+    """Starting at index 0 (expected to be `{`), return the substring up to
+    and including the matching closing `}`. Returns None if no balanced
+    object is found (truncated input). Quoted strings + escape sequences
+    are respected so brace characters inside JSON string values don't
+    throw off the depth count."""
+    if not s or s[0] != "{":
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i, ch in enumerate(s):
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return s[:i + 1]
+    return None
 
 
 def _strict_json(s: str) -> dict[str, Any] | None:

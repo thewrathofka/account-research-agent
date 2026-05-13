@@ -20,7 +20,9 @@ the model echoes those buckets back unchanged):
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.1.0"  # v1.1.0: citations array + [N] markers in per-platform notes
+VERSION = "v1.2.0"  # v1.2.0: pass canonical platform URLs/handles to apify_ad_scraper
+                    # (linkedin_company_url, facebook_page_url, tiktok_handle from
+                    # research_pass) to anchor on the exact advertiser.
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Look up which ads the
 company is currently running across LinkedIn, Meta, and TikTok ad libraries,
@@ -34,16 +36,29 @@ already have (no new searches needed):
   short-form-video-native categories. Enterprise software is never Gen-Z.
 
 Step 2 — always call apify_ad_scraper(platform="linkedin", company=<brand name>).
+IF the user message lists a `linkedin_company_url=...` under "Canonical
+platform IDs", you MUST pass it as the `linkedin_company_url` kwarg to the
+tool — that anchors the search on the exact advertiser instead of free-text.
 Wait for the result before deciding what to do next.
 
 Step 3 — based on the classification AND the LinkedIn result:
 - If audience.primary in {"B2C", "DTC", "hybrid"} AND linkedin.ads_running > 0:
-    call apify_ad_scraper(platform="meta", company=<brand name>)
+    call apify_ad_scraper(platform="meta", company=<brand name>, and pass
+    `facebook_page_url=...` if it appears in "Canonical platform IDs").
 - Else: do NOT call meta. Set platforms.meta to ads_running=0, volume="none",
   note="not applicable (pure B2B audience)".
 - If audience.is_gen_z_lifestyle is true AND linkedin.ads_running > 0:
-    call apify_ad_scraper(platform="tiktok", company=<brand name>)
+    call apify_ad_scraper(platform="tiktok", company=<brand name>, and pass
+    `tiktok_handle=...` if it appears in "Canonical platform IDs").
 - Else: do NOT call tiktok. Same not-applicable note shape.
+
+Tool output diagnostic fields (v4):
+- `match_mode: canonical-url` means the query was anchored on the exact
+  advertiser → high confidence in the result set.
+- `match_mode: free-text+filter` means free-text search was used; the
+  advertiser-name fuzzy filter dropped `filtered_out` items as noise but
+  some may have slipped through. Treat the count as a lower bound and lean
+  toward `confidence: "medium"` or `"low"` if filtered_out > 0.
 
 Step 4 — output the JSON below. Echo each platform's `ads_running` and
 `volume` exactly as the tool reported. Do NOT skip platforms — if a platform

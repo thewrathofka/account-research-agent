@@ -32,8 +32,11 @@ class Module10AdLibrary(Task):
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Inject the research-pass classification cues so the model doesn't waste
-        a tool call deciding if the company is B2B vs B2C."""
-        research = (context.get("research_pass") or {}).get("raw_research", "")
+        a tool call deciding if the company is B2B vs B2C. Also surface the
+        canonical platform URLs research_pass captured so apify_ad_scraper
+        queries land on the right advertiser instead of free-text matching."""
+        rp = context.get("research_pass") or {}
+        research = rp.get("raw_research", "")
         revenue = context.get("module_03_revenue_model") or {}
         creative = context.get("module_09_creative_reality") or {}
 
@@ -51,6 +54,38 @@ class Module10AdLibrary(Task):
                 f"- {line}" for line in prior_lines
             ) + "\n\n"
 
+        # Canonical platform identifiers from research_pass. When present, the
+        # model MUST pass them through to apify_ad_scraper as the matching
+        # kwargs (linkedin_company_url / facebook_page_url / tiktok_handle) —
+        # they anchor the query on the exact advertiser instead of free-text
+        # name matching, which is how WIRED / Miro / Mendix etc. previously
+        # picked up ads from unrelated companies sharing the brand keyword.
+        linkedin_url = rp.get("linkedin_company_url")
+        facebook_url = rp.get("facebook_page_url")
+        tiktok_handle = rp.get("tiktok_handle")
+        canonical_lines: list[str] = []
+        if linkedin_url:
+            canonical_lines.append(f"linkedin_company_url={linkedin_url}")
+        if facebook_url:
+            canonical_lines.append(f"facebook_page_url={facebook_url}")
+        if tiktok_handle:
+            canonical_lines.append(f"tiktok_handle={tiktok_handle}")
+        canonical_block = ""
+        if canonical_lines:
+            canonical_block = (
+                "Canonical platform IDs (pass these to apify_ad_scraper to "
+                "avoid name-collision noise):\n"
+                + "\n".join(f"- {line}" for line in canonical_lines)
+                + "\n\n"
+            )
+        else:
+            canonical_block = (
+                "Canonical platform IDs: NONE captured in research_pass. "
+                "apify_ad_scraper will fall back to free-text search + "
+                "advertiser-name post-filter. Results may include name-"
+                "collision noise; weigh confidence accordingly.\n\n"
+            )
+
         # Trim research context to keep the user-message size sane — the model
         # doesn't need the full 4-5k token raw_research dump to classify
         # audience; the first ~1500 chars cover overview + customer segment.
@@ -60,14 +95,18 @@ class Module10AdLibrary(Task):
             f"{_today_header()}\n\n"
             f"Company: {account_name}.\n\n"
             f"{prior_block}"
+            f"{canonical_block}"
             f"## Research context (excerpt — first 1500 chars)\n\n"
             f"{research_excerpt}\n\n"
             "Workflow:\n"
             "1. Classify the audience (B2B/B2C/hybrid + Gen-Z/lifestyle?) from "
             "the context above.\n"
-            "2. Call apify_ad_scraper(platform='linkedin', company=<brand>).\n"
+            "2. Call apify_ad_scraper(platform='linkedin', company=<brand>, "
+            "linkedin_company_url=<url-from-above-if-present>). If the URL "
+            "above is NOT present, omit the linkedin_company_url kwarg.\n"
             "3. Based on classification AND LinkedIn count, decide whether to "
-            "also call meta and/or tiktok per the gating rules.\n"
+            "also call meta (pass facebook_page_url= when known) and/or tiktok "
+            "(pass tiktok_handle= when known) per the gating rules.\n"
             "4. Output the JSON schema. Always include all 3 platforms in the "
             "platforms array (use ads_running=0 + 'not applicable' note when "
             "skipping).\n"
