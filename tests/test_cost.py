@@ -242,6 +242,29 @@ def _record_failed(
     ))
 
 
+def _record_degraded(
+    rl: RunLog,
+    *,
+    account: str,
+    task: str,
+    output_json: str,
+    model: str = "claude-sonnet-4-6",
+) -> None:
+    """A status='success' row where the model proceeded after a tool error.
+    Used to verify that quota-degraded rows are counted, not just failed ones."""
+    rl.record(RunRecord(
+        account_page_id=f"pid-{account}",
+        account_name=account, task_name=task,
+        started_at=iso_now(), completed_at=iso_now(),
+        status="success", confidence="low",
+        model=model, model_used=model,
+        input_tokens=1_000, output_tokens=100,
+        cached_input_tokens=0, search_count=0,
+        duration_seconds=1.0,
+        output_json=output_json,
+    ))
+
+
 def test_cost_summary_counts_failed_rows(tmp_path) -> None:
     rl = RunLog(tmp_path / "runs.db")
     _record(rl, account="A", task="ok",
@@ -250,7 +273,7 @@ def test_cost_summary_counts_failed_rows(tmp_path) -> None:
     _record_failed(rl, account="B", task="bad", error="another")
     cs = rl.cost_summary()
     assert cs["failed_rows"] == 2
-    assert cs["failed_tavily_quota"] == 0
+    assert cs["tavily_quota_affected"] == 0
     # Successful row's cost still counts.
     assert cs["total_usd"] > 0
 
@@ -270,7 +293,27 @@ def test_cost_summary_recognizes_tavily_432_in_errors(tmp_path) -> None:
     _record_failed(rl, account="C", task="bad", error="unrelated runtime error")
     cs = rl.cost_summary()
     assert cs["failed_rows"] == 3
-    assert cs["failed_tavily_quota"] == 2
+    assert cs["tavily_quota_affected"] == 2
+
+
+def test_cost_summary_counts_degraded_success_rows_too(tmp_path) -> None:
+    """The most common Tavily-432 outcome is NOT status=failed — the model
+    sees the 432 short-circuit in a tool_result and proceeds with low
+    confidence. Those rows must count too, or the quota warning under-fires."""
+    rl = RunLog(tmp_path / "runs.db")
+    _record_degraded(
+        rl, account="A", task="module_07",
+        output_json='{"confidence":"low","sources":[],"raw":"Tool returned: ERROR: Tavily monthly quota exhausted (HTTP 432)"}',
+    )
+    _record_degraded(
+        rl, account="B", task="module_13",
+        output_json='{"confidence":"low","note":"Could not search; HTTP 432 from Tavily"}',
+    )
+    _record(rl, account="C", task="ok",
+            model="claude-sonnet-4-6", input_tokens=1_000, output_tokens=100)
+    cs = rl.cost_summary()
+    assert cs["failed_rows"] == 0  # degraded rows are NOT failures
+    assert cs["tavily_quota_affected"] == 2
 
 
 def test_cost_summary_no_failures_returns_zero_counts(tmp_path) -> None:
@@ -279,7 +322,7 @@ def test_cost_summary_no_failures_returns_zero_counts(tmp_path) -> None:
             model="claude-sonnet-4-6", input_tokens=1_000, output_tokens=100)
     cs = rl.cost_summary()
     assert cs["failed_rows"] == 0
-    assert cs["failed_tavily_quota"] == 0
+    assert cs["tavily_quota_affected"] == 0
 
 
 def test_cost_summary_does_not_misclassify_non_tavily_432(tmp_path) -> None:
@@ -291,4 +334,4 @@ def test_cost_summary_does_not_misclassify_non_tavily_432(tmp_path) -> None:
     )
     cs = rl.cost_summary()
     assert cs["failed_rows"] == 1
-    assert cs["failed_tavily_quota"] == 0
+    assert cs["tavily_quota_affected"] == 0

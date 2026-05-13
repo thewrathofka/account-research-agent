@@ -212,6 +212,24 @@ class Task:
         if self.synthesis_only:
             tools: list[Tool] = []
             max_iter = 1
+            # Short-circuit: a synthesis-only task without research_pass context
+            # has nothing real to synthesize from — it would be asked to fabricate
+            # from training data with no source verification. "Wrong data is
+            # worse than missing data" — return failed so writeback gates this.
+            research = (ctx.get("research_pass") or {}).get("raw_research", "")
+            if not research:
+                return TaskResult(
+                    task_name=self.name, output=None, confidence="failed",
+                    fields={}, page_blocks=[], section=self.section, subsection=self.subsection,
+                    sources=[], search_count=0,
+                    input_tokens=0, output_tokens=0,
+                    duration_seconds=0.0,
+                    prompt_version=prompt_version, provider_name=provider.name,
+                    cached_input_tokens=0,
+                    model_used=None,
+                    tool_results_seen=None,
+                    error="synthesis-only task short-circuited: research_pass produced no raw_research",
+                )
         else:
             tools = self.build_tools()
             max_iter = config.MAX_AGENT_ITERATIONS
@@ -263,7 +281,11 @@ class Task:
         output = self.post_parse(result.text, output)
 
         confidence = output.get("confidence", "low")
-        if confidence not in {"high", "medium", "low"}:
+        # "failed" is the model's self-report that it couldn't do the work;
+        # the orchestrator flows it through to overall_status="failed" and
+        # gates the Notion write. Don't silently downgrade to "low" — that
+        # would let bad data slip into Notion with status=needs_review.
+        if confidence not in {"high", "medium", "low", "failed"}:
             confidence = "low"
 
         # Inject the canonical Notion account name as ephemeral context for the

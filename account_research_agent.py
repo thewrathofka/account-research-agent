@@ -71,8 +71,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         "specific company.")
     p.add_argument("--since", type=int, default=None, metavar="DAYS",
                    help="Only accounts not researched in the last N days")
-    p.add_argument("--tasks", default="company_overview",
-                   help=f"Comma-separated task names. Available: {','.join(TASK_REGISTRY)}")
+    from tasks import PHASE2_TASKS as _default_tasks
+    p.add_argument("--tasks", default=",".join(_default_tasks),
+                   help=(
+                       "Comma-separated task names. Defaults to the full "
+                       "Phase 2 pipeline (12 tasks, ~$0.30/account). "
+                       f"Available: {','.join(TASK_REGISTRY)}"
+                   ))
     p.add_argument("--dry-run", action="store_true",
                    help="Run research but skip Notion writes (still logs to SQLite)")
     p.add_argument("--batch", action="store_true",
@@ -220,13 +225,15 @@ def _print_cost_block(
     # Surface failed task-runs prominently — silent failures with a happy
     # cost total were the original sin that motivated this block.
     if cs.get("failed_rows", 0):
-        msg = f"  ⚠ Failures: {cs['failed_rows']} task-run(s) failed"
-        if cs.get("failed_tavily_quota", 0):
-            msg += (
-                f" — {cs['failed_tavily_quota']} due to Tavily 432 "
-                f"(quota exhausted; top up at tavily.com)"
-            )
-        print(msg)
+        print(f"  ⚠ Failures: {cs['failed_rows']} task-run(s) failed")
+    # Tavily quota exhaustion can degrade success rows too (model sees the
+    # 432 in a tool_result and proceeds with low confidence). Surface both
+    # cases as a single "affected" count so failed + degraded show up.
+    if cs.get("tavily_quota_affected", 0):
+        print(
+            f"  ⚠ Tavily quota: {cs['tavily_quota_affected']} row(s) saw the "
+            f"432 short-circuit (failed or degraded) — top up at tavily.com"
+        )
     # Always print Apify-not-included caveat so the user isn't surprised.
     print("  Apify (LinkedIn/Meta/TikTok ad scrapers) not included — check "
           "dashboard.apify.com.")

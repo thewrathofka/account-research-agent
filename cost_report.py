@@ -63,13 +63,12 @@ def _print_report(cs: dict, *, top: int) -> None:
             f"1255 ~${per * 1255:.2f}"
         )
     if cs.get("failed_rows", 0):
-        msg = f"⚠ Failures: {cs['failed_rows']} task-run(s) failed"
-        if cs.get("failed_tavily_quota", 0):
-            msg += (
-                f" — {cs['failed_tavily_quota']} due to Tavily 432 "
-                f"(top up at tavily.com)"
-            )
-        print(msg)
+        print(f"⚠ Failures: {cs['failed_rows']} task-run(s) failed")
+    if cs.get("tavily_quota_affected", 0):
+        print(
+            f"⚠ Tavily quota: {cs['tavily_quota_affected']} row(s) saw the "
+            f"432 short-circuit (failed or degraded) — top up at tavily.com"
+        )
     print("Apify cost not included — see dashboard.apify.com.")
     print("=" * 72)
 

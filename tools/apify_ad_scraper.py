@@ -29,9 +29,17 @@ from typing import Any
 try:
     from apify_client import ApifyClient
     from apify_client.errors import ApifyApiError
+    _APIFY_AVAILABLE = True
 except ImportError:  # pragma: no cover — only needed for live runs
     ApifyClient = None  # type: ignore
-    ApifyApiError = Exception  # type: ignore
+    # Sentinel class so `except ApifyApiError` doesn't degrade to a catch-all
+    # Exception when the apify-client package is absent. This branch only
+    # fires when the tool runs without the dependency installed (e.g. unit
+    # tests with monkeypatched HTTP); we never actually reach the except
+    # clause because ApifyClient is None and we short-circuit earlier.
+    class ApifyApiError(Exception):  # type: ignore
+        status_code: int | None = None
+    _APIFY_AVAILABLE = False
 
 import config
 from rate_limit import APIFY_LIMITER

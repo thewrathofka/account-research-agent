@@ -63,8 +63,10 @@ Cross-provider proof of swap (live-measured, v0.3.0 era):
 - One-line swap via `--provider openai`
 
 Open follow-ups:
-- Full 11-task pipeline cross-provider eval (only module_01_gate has been
-  cross-provider tested)
+- Full 12-task pipeline cross-provider eval (only module_01_gate has been
+  cross-provider tested live; gpt-5.5 pricing in `config.py` is still a
+  placeholder — re-pin once OpenAI ships final rates before trusting any
+  scale-cost forecasts on `--provider openai`)
 - OpenAI Batch API (file-upload flow; Anthropic Batch shipped)
 - Real Gemini provider (still a stub)
 - Per-prompt golden cases for modules 3, 4, 5, 6, 7, 9, 10, 12, 13, 14, 15
@@ -72,6 +74,16 @@ Open follow-ups:
 - Lever / Ashby / Workday ATS providers (Greenhouse-only today)
 - Phase 3 hardening: cost ceilings per account, per-task resume, monthly
   scheduled cron
+
+Model tiers (current): two tiers, NOT five. `smart` (Sonnet/gpt-5.5/Pro)
+for tool-using tasks; `fast` (Haiku/gpt-5.5-mini/Flash) for synthesis. See
+`config.MODEL_PRICING_PER_M_TOKENS` for the per-model rates and a note on
+why `cached_input` semantics differ across providers.
+
+Companion docs: `INVENTORY.md` is the manual-verification catalogue of every
+module + every Notion property + every page-body section. `AUDIT.md` is the
+2026-05-13 pre-lockdown code review with findings (most fixed; C2 was a
+false positive on enum-null, reverted).
 
 ---
 

@@ -259,18 +259,24 @@ class WebSearchTool:
 
         results = response.get("results", []) or []
         if not results:
+            # Empty result = "no answer right now" — could be a bad query
+            # phrasing or a genuinely-not-indexed topic. Cache for ONLY 30 min
+            # (not the success 24h) so a slight rephrase or a few hours of
+            # crawl-time can recover. Long TTLs on empty results bake false
+            # negatives across a 213-account batch.
             text = f"No results for: {query}"
-        else:
-            lines = []
-            for i, r in enumerate(results, start=1):
-                lines.append(
-                    f"Result {i}:\n"
-                    f"Title: {r.get('title', 'No title')}\n"
-                    f"URL: {r.get('url', 'No url')}\n"
-                    f"Content: {r.get('content', 'No content')}"
-                )
-            text = "\n\n".join(lines)
-        # Successes get the normal 24h TTL.
+            self.cache.store(self.name, args, text, ttl_hours=0.5)
+            return text
+        lines = []
+        for i, r in enumerate(results, start=1):
+            lines.append(
+                f"Result {i}:\n"
+                f"Title: {r.get('title', 'No title')}\n"
+                f"URL: {r.get('url', 'No url')}\n"
+                f"Content: {r.get('content', 'No content')}"
+            )
+        text = "\n\n".join(lines)
+        # Non-empty success: standard 24h TTL.
         self.cache.store(self.name, args, text, ttl_hours=24)
         self._record_urls([r.get("url", "") for r in results])
         return text

@@ -8,6 +8,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import config
@@ -548,10 +549,13 @@ def _research_section_blocks(
 
 
 def _current_git_sha() -> str | None:
-    """Return short git SHA of HEAD for run-log provenance, or None if not in a repo."""
+    """Return short git SHA of HEAD for run-log provenance, or None if not in a repo.
+    Pinned to the repo root so a cron from a different CWD still records the SHA."""
     try:
         out = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            cwd=Path(__file__).parent,
         )
         return out.decode().strip()
     except (subprocess.CalledProcessError, FileNotFoundError):

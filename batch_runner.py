@@ -88,6 +88,18 @@ def run_batch(
     log.info("Batch mode: pre=%s | batched=%s | post=%s",
              pre_batch_names, batchable_names, post_batch_names)
 
+    # Warn if the user-supplied --tasks order doesn't match the bucket order
+    # we're actually about to execute. The bucket order (gate+research →
+    # synthesis → tool-using post) is correct because downstream tasks read
+    # from upstream context, but a silent reorder could mask a misconfigured
+    # task list (e.g. the user thinks they're running module_04 first).
+    execution_order = pre_batch_names + batchable_names + post_batch_names
+    if execution_order != task_names:
+        log.warning(
+            "Batch mode reordered tasks for execution. Requested: %s. Running: %s.",
+            task_names, execution_order,
+        )
+
     # ---- Pass 1: sync gate + research_pass per account ----
     per_account_results: dict[str, list[TaskResult]] = {a.page_id: [] for a in accounts}
     per_account_context: dict[str, dict[str, Any]] = {a.page_id: {} for a in accounts}
@@ -324,7 +336,9 @@ def _run_batch_pass(
             )
             continue
         confidence = output.get("confidence", "low")
-        if confidence not in {"high", "medium", "low"}:
+        # Mirror tasks/base.py: "failed" is a valid model self-report that
+        # flows through to overall_status="failed" and skips Notion writes.
+        if confidence not in {"high", "medium", "low", "failed"}:
             confidence = "low"
         out[(acc.page_id, task.name)] = TaskResult(
             task_name=task.name, output=output, confidence=confidence,

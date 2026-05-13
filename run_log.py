@@ -241,7 +241,8 @@ class RunLog:
                           COALESCE(output_tokens, 0),
                           COALESCE(cached_input_tokens, 0),
                           COALESCE(search_count, 0),
-                          COALESCE(error, '')
+                          COALESCE(error, ''),
+                          COALESCE(output_json, '')
                    FROM task_runs{where_sql}""",
                 params,
             ).fetchall()
@@ -257,10 +258,10 @@ class RunLog:
         total_searches = 0
         total_rows = 0
         failed_rows = 0
-        failed_tavily_quota = 0
+        tavily_quota_affected = 0
         successful_account_pairs: set[tuple[str, str]] = set()
 
-        for (acct, task, model, status, in_tok, out_tok, cached_tok, searches, err) in rows:
+        for (acct, task, model, status, in_tok, out_tok, cached_tok, searches, err, output_json) in rows:
             total_rows += 1
             llm_usd = config.estimate_usd_cost(
                 in_tok, out_tok, model, cached_input_tokens=cached_tok,
@@ -278,12 +279,15 @@ class RunLog:
                 successful_account_pairs.add((acct, task))
             elif status == "failed":
                 failed_rows += 1
-                # Substring detection — "432" + "tavily" in the error message
-                # is a strong signal Tavily's monthly quota tripped (see
-                # tools/web_search.py for the breaker).
-                err_lower = (err or "").lower()
-                if "432" in err_lower and "tavily" in err_lower:
-                    failed_tavily_quota += 1
+            # Tavily quota detection. The breaker's short-circuit string is
+            # "ERROR: Tavily monthly quota exhausted (HTTP 432)" — when the
+            # model saw it in a tool_result and kept going, the row is
+            # status='success' but degraded; when the model couldn't recover,
+            # the row is status='failed' with the same string in `error`.
+            # Scan both `error` and `output_json` to catch both cases.
+            haystack = ((err or "") + " " + (output_json or "")).lower()
+            if "tavily" in haystack and ("432" in haystack or "quota" in haystack):
+                tavily_quota_affected += 1
 
             per_account[acct] = per_account.get(acct, 0.0) + row_usd
 
@@ -330,7 +334,7 @@ class RunLog:
             "search_usd": total_search_usd,
             "rows": total_rows,
             "failed_rows": failed_rows,
-            "failed_tavily_quota": failed_tavily_quota,
+            "tavily_quota_affected": tavily_quota_affected,
             "accounts": account_count,
             "avg_per_account_usd": (total_usd / account_count) if account_count else 0.0,
             "input_tokens": total_input,

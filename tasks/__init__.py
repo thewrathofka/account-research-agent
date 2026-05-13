@@ -1,7 +1,8 @@
 """Task registry. New tasks register their class here.
 
-Phase 1 will add module_01 ... module_14. For v0.1.0 (post-refactor) we keep
-the legacy CompanyOverview around so the smoke test still passes.
+CompanyOverview is the v0.0 single-task MVP; kept only for legacy test
+fixtures (test_gate.py / test_providers.py). It is NOT part of PHASE1_TASKS
+or PHASE2_TASKS and should never be passed to live runs.
 """
 
 from __future__ import annotations

@@ -117,13 +117,26 @@ COST_REGRESSION_OVERAGE = 0.20  # 20% headroom before failing the eval
 
 # Per-1M-token rates by tier-resolved model name. Used by evals to translate the
 # token counters from the run log into a USD cost estimate.
+#
+# cached_input semantics differ across providers — these prices are NOT directly
+# comparable across the three vendor blocks below:
+#   - Anthropic: explicit `cache_control` blocks the agent sets; we get exact
+#     hit/miss accounting via `cache_read_input_tokens`. Cost is real.
+#   - OpenAI:   AUTOMATIC cache for prompts >=1024 tokens; no developer control.
+#     `prompt_tokens_details.cached_tokens` reports auto-cache hits. The reported
+#     rate is accurate per-token but the HIT RATE will look different from
+#     Anthropic's, so the "cached_input" line in the cost block is provider-
+#     conditional. Don't compare ratios across providers without context.
+#   - Gemini:   no equivalent token field today; cached_input always reads 0.
 MODEL_PRICING_PER_M_TOKENS: dict[str, dict[str, float]] = {
     # Anthropic — Sonnet 4.6 (current smart tier) + Haiku 4.5 (fast tier).
     "claude-sonnet-4-6": {"input": 3.00, "output": 15.00, "cached_input": 0.30},
     "claude-haiku-4-5":  {"input": 1.00, "output": 5.00,  "cached_input": 0.10},
     # OpenAI — gpt-5.5 (smart) + gpt-5.5-mini (fast). Update once final pricing
     # is confirmed; current numbers carry forward gpt-4.1's per-M cost as a
-    # placeholder so cost-regression evals don't no-op against unknown models.
+    # PLACEHOLDER so cost-regression evals don't no-op against unknown models.
+    # ⚠ Forecasts at scale on --provider openai are not trustworthy until these
+    # numbers are re-pinned against the real published rates.
     "gpt-5.5":           {"input": 2.00, "output": 8.00,  "cached_input": 0.50},
     "gpt-5.5-mini":      {"input": 0.40, "output": 1.60,  "cached_input": 0.10},
     # Google — Gemini 2.5

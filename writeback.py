@@ -109,6 +109,7 @@ def replace_value(
 MERGE_STRATEGIES: dict[str, MergeFn] = {
     crm_module.PROP_BUYING_SIGNALS: merge_multi_select,
     crm_module.PROP_BUYING_INTENT: merge_multi_select,
+    crm_module.PROP_PAIN_POINT_TAGS: merge_multi_select,
     crm_module.PROP_STRUCTURE_NOTES: merge_rich_text_append,
     crm_module.PROP_RESEARCH_STATUS: merge_status_priority,
 }
