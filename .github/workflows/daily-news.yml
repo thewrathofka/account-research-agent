@@ -4,17 +4,15 @@ name: Daily news (Priority A)
 # (~10-15 accounts, ~$0.13/account/day projected = ~$20-40/month). News and
 # trigger events have the shortest sales-relevance window — daily catches
 # bankruptcy / layoffs / funding / agency-switch / Tier-1 senior hire within
-# ~24h of breaking publicly.
-#
-# IMPORTANT: this job does NOT update the `Last Researched` Notion property.
-# That property keeps "full pipeline ran" semantics — only monthly-full writes it.
+# ~24h of breaking publicly. Every run bumps Last Researched.
 
 on:
   schedule:
-    # 06:00 Europe/Belgrade. UTC+1 (CET, Oct–Mar) → 05:00 UTC.
-    # During DST (UTC+2, late Mar–late Oct) this fires at 07:00 local — fine
-    # for a daily news poll; tighten only if start-of-day skew matters.
-    - cron: '0 5 * * *'
+    # 18:00 Europe/Belgrade (end-of-day). UTC+2 (CEST, late Mar–late Oct)
+    # → 16:00 UTC. During winter UTC+1 (CET) this fires at 17:00 local —
+    # fine for a daily news poll; tighten only if hour-precise delivery
+    # becomes important.
+    - cron: '0 16 * * *'
   workflow_dispatch:  # allow manual `gh workflow run` for ad-hoc runs
 
 jobs:
