@@ -296,19 +296,18 @@ def test_skipped_task_injects_prior_output_into_context(tmp_path) -> None:
     assert synth.output.get("summary") == "prior summary stays"
 
 
-def test_completion_payload_omits_last_researched_when_partial_run() -> None:
-    """Daily/weekly partial runs must NOT touch the Last Researched property
-    so it keeps its 'full pipeline ran' semantics."""
+def test_completion_payload_always_updates_last_researched() -> None:
+    """Every agent touch — daily, weekly, monthly, quarterly — bumps the
+    `Last Researched` date. The property's semantics: "when did the agent
+    last update anything on this page." Used by Kali for freshness-at-a-
+    glance in the CRM; partial refreshes should still count."""
     from writeback import build_completion_payload
     import crm as crm_module
 
-    full = build_completion_payload("high", "done", writes_last_researched=True)
-    partial = build_completion_payload("high", "done", writes_last_researched=False)
-    assert crm_module.PROP_LAST_RESEARCHED in full
-    assert crm_module.PROP_LAST_RESEARCHED not in partial
-    # Confidence + Status still written on partial runs.
-    assert crm_module.PROP_RESEARCH_CONFIDENCE in partial
-    assert crm_module.PROP_RESEARCH_STATUS in partial
+    payload = build_completion_payload("high", "done")
+    assert crm_module.PROP_LAST_RESEARCHED in payload
+    assert crm_module.PROP_RESEARCH_CONFIDENCE in payload
+    assert crm_module.PROP_RESEARCH_STATUS in payload
 
 
 def test_skipped_task_with_no_output_json_falls_through(tmp_path) -> None:

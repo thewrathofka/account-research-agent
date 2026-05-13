@@ -211,11 +211,6 @@ def main(argv: list[str] | None = None) -> int:
 
     # Phase A: parse --module-since "module_NN:DAYS,module_MM:DAYS" → dict.
     module_since = _parse_module_since(args.module_since)
-    # Auto-derive writes_last_researched: the property keeps "full pipeline ran"
-    # semantics, so only runs that include every PHASE2 task write it. Daily/
-    # weekly partial runs leave Last Researched alone.
-    from tasks import PHASE2_TASKS
-    writes_last_researched = set(PHASE2_TASKS).issubset(set(task_names))
 
     # Stamp the run boundary BEFORE work begins so the cost summary can filter
     # task_runs rows to just-this-batch (vs lifetime totals).
@@ -231,8 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         orch = Orchestrator(crm=crm, run_log=run_log, provider=provider,
                             concurrency=args.concurrency, label=args.label,
-                            module_since=module_since,
-                            writes_last_researched=writes_last_researched)
+                            module_since=module_since)
         outcomes = orch.run(accounts, task_names, dry_run=args.dry_run)
 
     print("\n--- Summary ---")

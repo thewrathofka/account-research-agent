@@ -58,7 +58,6 @@ class Orchestrator:
         concurrency: int = config.DEFAULT_CONCURRENCY,
         label: str | None = None,
         module_since: dict[str, int] | None = None,
-        writes_last_researched: bool = True,
     ):
         self.crm = crm
         self.run_log = run_log
@@ -70,10 +69,6 @@ class Orchestrator:
         # whose latest successful run is within `days` are skipped, with prior
         # output injected into the context envelope for downstream tasks.
         self.module_since = module_since or {}
-        # Phase A behavior: only the monthly full-pipeline run writes the
-        # `Last Researched` date property. Daily/weekly partial runs leave
-        # it alone so the property keeps its "full pipeline ran" semantics.
-        self.writes_last_researched = writes_last_researched
 
     def run(
         self,
@@ -463,7 +458,6 @@ class Orchestrator:
             research_blocks=blocks,
             dry_run=False,
             label=self.label,
-            writes_last_researched=self.writes_last_researched,
             detected_events=detected_events,
         )
 

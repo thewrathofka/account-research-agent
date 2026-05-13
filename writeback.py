@@ -152,26 +152,23 @@ def build_property_payload(
 
 def build_completion_payload(
     overall_confidence: str, overall_status: str,
-    *,
-    writes_last_researched: bool = True,
 ) -> dict[str, Any]:
-    """Properties written ONLY after the page body succeeds (Fix Appendix #3).
+    """Properties written after the page body succeeds (Fix Appendix #3).
 
-    `writes_last_researched`: when False (Phase A daily/weekly partial runs),
-    the `Last Researched` date is left untouched. That property keeps its
-    "full pipeline ran" semantics — only the monthly full run updates it.
+    `Last Researched` is bumped on EVERY agent touch — daily, weekly, monthly,
+    quarterly. Property semantics: "the last time the agent updated anything
+    on this page." Kali looks at it for freshness-at-a-glance, so partial
+    refreshes should still count.
     """
-    payload: dict[str, Any] = {
+    return {
+        crm_module.PROP_LAST_RESEARCHED: {
+            "date": {"start": date.today().isoformat()}
+        },
         crm_module.PROP_RESEARCH_CONFIDENCE: {
             "select": {"name": overall_confidence if overall_confidence != "failed" else "low"}
         },
         crm_module.PROP_RESEARCH_STATUS: {"select": {"name": overall_status}},
     }
-    if writes_last_researched:
-        payload[crm_module.PROP_LAST_RESEARCHED] = {
-            "date": {"start": date.today().isoformat()}
-        }
-    return payload
 
 
 # ---- The unified writeback entry point ----
@@ -185,7 +182,6 @@ def write_account_outcome(
     research_blocks: list[dict[str, Any]] | None,
     dry_run: bool = False,
     label: str | None = None,
-    writes_last_researched: bool = True,
     detected_events: list[DetectedEvent] | None = None,
 ) -> bool:
     """Atomic-ish writeback for one account.
@@ -250,10 +246,7 @@ def write_account_outcome(
                 account.page_id, len(events), e,
             )
 
-    completion_props = build_completion_payload(
-        overall_confidence, overall_status,
-        writes_last_researched=writes_last_researched,
-    )
+    completion_props = build_completion_payload(overall_confidence, overall_status)
     crm.update_properties(account.page_id, completion_props)
     return True
 
