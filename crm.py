@@ -6,6 +6,7 @@ and a rename here = a one-line change everywhere).
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -13,6 +14,9 @@ from notion_client import Client as NotionClient
 
 import config
 from rate_limit import NOTION_LIMITER
+
+
+log = logging.getLogger(__name__)
 
 
 # ---- Property names ----
@@ -163,6 +167,34 @@ class NotionCRM:
     def __init__(self, token: str | None = None, database_id: str | None = None):
         self.client = NotionClient(auth=token or config.NOTION_API_KEY)
         self.database_id = database_id or config.NOTION_DATABASE_ID
+        # Notion API v3 split databases (containers) from data sources (the
+        # schema-bearing collections). databases.retrieve no longer returns
+        # `properties` and databases.query was removed. Resolve the database's
+        # single data source ID lazily on first access so callers don't need
+        # to know about the change. Multi-source databases pick the first
+        # data source — we don't have any in the All Accounts CRM, but if
+        # one ever shows up the user should hard-code the data_source_id.
+        self._data_source_id: str | None = None
+
+    @property
+    def data_source_id(self) -> str:
+        if self._data_source_id is None:
+            with NOTION_LIMITER:
+                db = self.client.databases.retrieve(database_id=self.database_id)
+            sources = db.get("data_sources") or []
+            if not sources:
+                raise RuntimeError(
+                    f"Notion database {self.database_id} has no data_sources. "
+                    "API v3 expects every database to surface at least one."
+                )
+            if len(sources) > 1:
+                log.warning(
+                    "Notion database %s has %d data_sources; using the first (%s). "
+                    "Hard-code data_source_id on NotionCRM if you need a specific one.",
+                    self.database_id, len(sources), sources[0]["id"],
+                )
+            self._data_source_id = sources[0]["id"]
+        return self._data_source_id
 
     def list_accounts(
         self,
@@ -184,7 +216,8 @@ class NotionCRM:
                 ]
             })
 
-        query: dict[str, Any] = {"database_id": self.database_id}
+        # API v3: databases.query was removed — query the data_source instead.
+        query: dict[str, Any] = {"data_source_id": self.data_source_id}
         if and_filters:
             query["filter"] = {"and": and_filters} if len(and_filters) > 1 else and_filters[0]
 
@@ -194,7 +227,7 @@ class NotionCRM:
             if cursor:
                 query["start_cursor"] = cursor
             with NOTION_LIMITER:
-                response = self.client.databases.query(**query)
+                response = self.client.data_sources.query(**query)
             for page in response.get("results", []):
                 results.append(_account_from_page(page))
                 if limit and len(results) >= limit:
@@ -338,9 +371,11 @@ class NotionCRM:
         write garbage to Notion. Reports both missing names and wrong types.
         """
         expected = expected if expected is not None else EXPECTED_NOTION_PROPERTIES
+        # API v3: schema lives on the data source, not on the database
+        # container. databases.retrieve no longer returns `properties`.
         with NOTION_LIMITER:
-            db = self.client.databases.retrieve(database_id=self.database_id)
-        actual = db.get("properties", {})
+            ds = self.client.data_sources.retrieve(data_source_id=self.data_source_id)
+        actual = ds.get("properties", {})
         missing = [name for name in expected if name not in actual]
         wrong_type = [
             f"{name} (got={actual[name].get('type')!r}, expected={typ!r})"
