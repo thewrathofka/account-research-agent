@@ -6,3 +6,8 @@ python-dotenv>=1.0.1
 python-jobspy>=1.1.0
 apify-client>=1.7.0
 jsonschema>=4.20.0
+# Phase E (2026-05-13): when LIBSQL_URL env var is set, run_log routes the
+# runs.db connection to a Turso/libSQL remote DB instead of a local file.
+# Required for GHA cron runs (filesystem doesn't persist between runs).
+# Local dev works without this installed — sqlite3 is the default backend.
+libsql-experimental>=0.0.41

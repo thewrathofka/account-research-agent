@@ -7,6 +7,7 @@ answer "did this prompt version perform better than the last one?" later.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -104,19 +105,53 @@ _PHASE15A_COLS_INT = ["cached_input_tokens"]
 _FIXAPP_COLS_TEXT = ["tool_results_seen"]
 
 
-def _open_conn(path: Path | str) -> sqlite3.Connection:
-    """Open a SQLite connection hardened for our ThreadPoolExecutor write pattern.
+def _open_conn(path: Path | str) -> Any:
+    """Open a connection to the runs database. Routes to one of two backends:
 
-    PRAGMAs (Fix Appendix #7):
-      - journal_mode=WAL  — readers and writers don't block each other
-      - busy_timeout=30s  — wait instead of failing on transient lock contention
-      - foreign_keys=ON   — enforce FK constraints if any tables ever add them
+    1. **Local SQLite** (default): hardened for our ThreadPoolExecutor write
+       pattern via journal_mode=WAL, busy_timeout=30s, foreign_keys=ON (Fix
+       Appendix #7). State lives in the file passed as `path`.
+
+    2. **Turso / libSQL remote** (when `LIBSQL_URL` env var is set): connects
+       to the URL with `LIBSQL_AUTH_TOKEN`. PRAGMAs are skipped — Turso's
+       server handles concurrency and FK enforcement on its side. Used when
+       running from GHA cron (where local files don't persist across runs)
+       or when sharing state across multiple machines. The returned
+       connection exposes the sqlite3-compatible `.execute / .executescript
+       / .commit / .close / .cursor` surface so all call sites work
+       unchanged.
+
+    The two backends both speak standard SQLite SQL; the schema, migrations,
+    and queries are identical. Backend selection is via env var only — no
+    config knob needs to be threaded through the orchestrator.
     """
+    libsql_url = os.environ.get("LIBSQL_URL")
+    if libsql_url:
+        import libsql_experimental as libsql
+        return libsql.connect(
+            libsql_url,
+            auth_token=os.environ.get("LIBSQL_AUTH_TOKEN"),
+        )
     conn = sqlite3.connect(str(path), timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+@contextmanager
+def _managed_conn(path: Path | str) -> Iterator[Any]:
+    """Open + commit + close pattern. Works for both sqlite3 and
+    libsql_experimental connections — sqlite3's own `with conn:` only
+    commits/rolls back (doesn't close), but here we want a hard close on
+    exit so connections never leak. Used by ToolCallCache + ATSSnapshotStore.
+    """
+    conn = _open_conn(path)
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @dataclass
@@ -154,7 +189,9 @@ class RunLog:
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         """Idempotently add Phase 1 + 1.5a + Fix Appendix columns to pre-existing databases."""
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
+        # NB: libsql_experimental's Cursor is not directly iterable; call
+        # fetchall() explicitly to stay compatible with both backends.
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)").fetchall()}
         for col in _PHASE1_COLS:
             if col not in existing:
                 conn.execute(f"ALTER TABLE task_runs ADD COLUMN {col} TEXT")
@@ -230,7 +267,7 @@ class RunLog:
                      AND (confidence IS NULL OR confidence != 'failed')
                      AND COALESCE(dry_run, 0) = 0
                    GROUP BY account_page_id, task_name""",
-                account_page_ids,
+                tuple(account_page_ids),
             ).fetchall()
         return {
             (pid, task): {
@@ -355,7 +392,7 @@ class RunLog:
                           COALESCE(error, ''),
                           COALESCE(output_json, '')
                    FROM task_runs{where_sql}""",
-                params,
+                tuple(params),
             ).fetchall()
 
         per_account: dict[str, float] = {}
@@ -474,7 +511,7 @@ class ToolCallCache:
         self.path = Path(path)
         self.ttl = timedelta(hours=ttl_hours)
         # Schema lives in RunLog._SCHEMA — just open the connection.
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             c.executescript(_SCHEMA)
 
     @staticmethod
@@ -486,7 +523,7 @@ class ToolCallCache:
     def lookup(self, tool_name: str, args: dict[str, Any]) -> str | None:
         """Return cached response text if not expired, else None."""
         args_hash = self._hash_args(args)
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             row = c.execute(
                 """SELECT response_text, expires_at
                    FROM tool_call_cache
@@ -525,7 +562,7 @@ class ToolCallCache:
         else:
             ttl = self.ttl
         expires_at = (_dt.now(_tz.utc) + ttl).isoformat()
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             c.execute(
                 """INSERT OR REPLACE INTO tool_call_cache
                    (tool_name, args_hash, response_text, cached_at, expires_at)
@@ -535,7 +572,7 @@ class ToolCallCache:
 
     def stats(self) -> dict[str, int]:
         """Return current cache size + expired count for telemetry."""
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             total = c.execute("SELECT COUNT(*) FROM tool_call_cache").fetchone()[0]
             now = iso_now()
             fresh = c.execute(
@@ -556,7 +593,7 @@ class ATSSnapshotStore:
 
     def __init__(self, path: str | Path = "runs.db"):
         self.path = Path(path)
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             c.executescript(_SCHEMA)
 
     def store(
@@ -568,7 +605,7 @@ class ATSSnapshotStore:
         jobs: list[dict[str, Any]],
     ) -> None:
         titles = [j.get("title", "") for j in jobs if j.get("title")]
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             c.execute(
                 """INSERT INTO ats_snapshots
                    (company_name, provider, slug, snapshot_at, titles_json, jobs_json)
@@ -583,7 +620,7 @@ class ATSSnapshotStore:
     ) -> dict[str, Any] | None:
         """Return the most recent snapshot for the (company, provider) pair, or
         None if no prior snapshot exists. Decodes `titles` back to a Python list."""
-        with _open_conn(self.path) as c:
+        with _managed_conn(self.path) as c:
             row = c.execute(
                 """SELECT id, slug, snapshot_at, titles_json, jobs_json
                    FROM ats_snapshots

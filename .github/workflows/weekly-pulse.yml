@@ -26,6 +26,8 @@ jobs:
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
       APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      LIBSQL_URL: ${{ secrets.LIBSQL_URL }}
+      LIBSQL_AUTH_TOKEN: ${{ secrets.LIBSQL_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,10 +49,3 @@ jobs:
             --tasks module_01_gate,research_pass,module_13_industry_pulse,module_14_hiring_signal \
             --module-since "module_13_industry_pulse:7,module_14_hiring_signal:7" \
             --cost-summary
-      - name: Upload runs.db artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: weekly-pulse-runs-${{ github.run_id }}
-          path: runs.db
-          retention-days: 30

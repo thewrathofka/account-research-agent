@@ -501,6 +501,47 @@ GHA secrets to configure when handing off:
 - `NOTION_API_KEY` — Notion CRM writes
 - `TAVILY_API_KEY` — news + general web search
 - `APIFY_TOKEN` — LinkedIn/Meta/TikTok ad library scrapers
+- `LIBSQL_URL` — Turso libSQL database URL (Phase E persistence)
+- `LIBSQL_AUTH_TOKEN` — Turso libSQL auth token
+
+### Database persistence (Phase E, 2026-05-13)
+
+GHA cron runs are stateless — each workflow start gets a fresh filesystem,
+which means a local `runs.db` would be empty every cron tick and break:
+- **Phase A freshness gating** (no prior rows → nothing is ever "fresh")
+- **Phase B diff detection** (no prior_output → events never fire)
+- **Phase C alert dedup** (event_alerts ledger starts empty every run)
+
+Solution: when `LIBSQL_URL` is set in the environment, `run_log._open_conn`
+routes to a Turso/libSQL remote DB instead of a local SQLite file. Same SQL,
+same schema, same migrations — just hosted state.
+
+**Local dev**: leave `LIBSQL_URL` unset and the agent uses local `runs.db`
+unchanged.
+
+**Production / GHA**: set both env vars (or repo secrets) and every write
+goes to Turso.
+
+**Turso setup** (one-time):
+```bash
+brew install tursodatabase/tap/turso
+turso auth signup            # uses GitHub login
+turso db create arr-runs-db  # creates a free-tier hosted database
+turso db show arr-runs-db --url     # → libsql://arr-runs-db-XXXX.turso.io
+turso db tokens create arr-runs-db  # → eyJhbG... (long-lived token)
+```
+
+Add both values to `.env` for local testing and to GHA repo secrets for
+production. The Turso free tier (9 GB / 1 B reads / 25 M writes per month)
+is comfortably above our workload — 213 accounts × 12 tasks × ~30 runs/month
+≈ 75K writes/month.
+
+**Migrating an existing local runs.db to Turso** (only if you want history
+carried over; otherwise start fresh and let Phase A/B priors accumulate):
+```bash
+sqlite3 runs.db .dump > /tmp/runs-dump.sql
+turso db shell arr-runs-db < /tmp/runs-dump.sql
+```
 
 Cron schedule (UTC, staggered to avoid Notion rate-limit overlap):
 - `daily-news.yml`         — `0 5 * * *`         (~06:00 Belgrade)
