@@ -83,4 +83,59 @@ PHASE2_TASKS = [
 GATE_TASKS: set[str] = {"module_01_gate"}
 
 
-__all__ = ["Task", "TaskResult", "TASK_REGISTRY"]
+# ---- Cadence-tier task sets (Phase A — 2026-05-13) ----
+#
+# Splits PHASE2_TASKS into refresh cadences so the GHA scheduler / Kali's
+# `/schedule` skill can run subsets at the right frequency. Each tier
+# includes the gate + research_pass at the top so downstream synthesis
+# modules in the tier have the context envelope they need.
+
+# Daily-tier news + buying-signal modules. Highest sales-relevance for
+# unpredictable, time-sensitive events: M&A, bankruptcy, funding rounds,
+# agency switches, AI initiatives, new senior creative hires.
+DAILY_TASKS = [
+    "module_01_gate",
+    "research_pass",
+    "module_06_structural_news",
+    "module_07_trigger_events",
+    "module_14_hiring_signal",
+]
+
+# Weekly-tier: full ATS snapshot diff + category-level industry pulse.
+WEEKLY_TASKS = [
+    "module_01_gate",
+    "research_pass",
+    "module_13_industry_pulse",
+    "module_14_hiring_signal",
+]
+
+# Monthly-tier: slow-moving creative posture + ad library + pain-point
+# synthesis. Module 04 must run AFTER the modules it reads from in the
+# context envelope (gate, revenue model, competitors) — so a monthly run
+# only synthesizes well when its dependencies have ALSO run within the
+# month. Daily/weekly partial runs do not invalidate the monthly's M04.
+MONTHLY_TASKS = [
+    "module_01_gate",
+    "research_pass",
+    "module_09_creative_reality",
+    "module_10_ad_library",
+    "module_04_pain_points",
+]
+
+# Quarterly-tier: corporate structure, competitive landscape, revenue model.
+# Years between meaningful changes — cheap to keep stale.
+QUARTERLY_TASKS = [
+    "module_01_gate",
+    "research_pass",
+    "module_03_revenue_model",
+    "module_05_corporate_structure",
+    "module_12_competitor_snapshot",
+]
+
+
+__all__ = [
+    "Task", "TaskResult", "TASK_REGISTRY",
+    "PHASE1_TASKS", "PHASE2_TASKS",
+    "DAILY_TASKS", "WEEKLY_TASKS", "MONTHLY_TASKS", "QUARTERLY_TASKS",
+    "GATE_TASKS",
+]

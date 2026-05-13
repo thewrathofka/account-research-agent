@@ -43,6 +43,11 @@ CREATE TABLE IF NOT EXISTS task_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_task_runs_account ON task_runs(account_page_id);
 CREATE INDEX IF NOT EXISTS idx_task_runs_started ON task_runs(started_at);
+-- Phase A freshness gating (2026-05-13): pre-load "last successful run per
+-- (account, task)" in one GROUP BY query so the orchestrator can skip
+-- modules whose output is still fresh per its cadence threshold.
+CREATE INDEX IF NOT EXISTS idx_task_runs_freshness
+    ON task_runs(account_page_id, task_name, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS tool_call_cache (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,6 +180,50 @@ class RunLog:
                  run.tool_results_seen),
             )
             return cur.lastrowid
+
+    def latest_successful_runs(
+        self, account_page_ids: list[str],
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """Pre-load the most recent USABLE task_run per (account, task) for the
+        given accounts. One GROUP BY query, used by Phase A freshness gating.
+
+        "Usable" excludes:
+          - status != 'success'      (errored / dry-run rows)
+          - confidence == 'failed'   (model self-reported it couldn't do the work
+                                      — this is the subtle case: the row may
+                                      log status='success' but the agent has
+                                      no usable signal to surface, so the
+                                      output is NOT fresh for cadence purposes)
+          - dry_run = 1              (rehearsals don't count as fresh)
+
+        Returns `{(account_page_id, task_name): {started_at, output_json,
+        prompt_version, confidence}}`. Empty dict if no inputs.
+        """
+        if not account_page_ids:
+            return {}
+        placeholders = ",".join("?" for _ in account_page_ids)
+        with self._conn() as c:
+            rows = c.execute(
+                f"""SELECT account_page_id, task_name,
+                          MAX(started_at) AS latest,
+                          output_json, prompt_version, confidence
+                   FROM task_runs
+                   WHERE account_page_id IN ({placeholders})
+                     AND status = 'success'
+                     AND (confidence IS NULL OR confidence != 'failed')
+                     AND COALESCE(dry_run, 0) = 0
+                   GROUP BY account_page_id, task_name""",
+                account_page_ids,
+            ).fetchall()
+        return {
+            (pid, task): {
+                "started_at": started_at,
+                "output_json": output_json,
+                "prompt_version": prompt_version,
+                "confidence": confidence,
+            }
+            for (pid, task, started_at, output_json, prompt_version, confidence) in rows
+        }
 
     def summary(self) -> dict[str, Any]:
         with self._conn() as c:

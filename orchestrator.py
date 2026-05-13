@@ -7,7 +7,7 @@ import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +53,8 @@ class Orchestrator:
         provider: LLMProvider,
         concurrency: int = config.DEFAULT_CONCURRENCY,
         label: str | None = None,
+        module_since: dict[str, int] | None = None,
+        writes_last_researched: bool = True,
     ):
         self.crm = crm
         self.run_log = run_log
@@ -60,6 +62,14 @@ class Orchestrator:
         self.concurrency = concurrency
         self.label = label
         self.git_sha = _current_git_sha()
+        # Phase A freshness gating. `module_since` is {task_name: days}; tasks
+        # whose latest successful run is within `days` are skipped, with prior
+        # output injected into the context envelope for downstream tasks.
+        self.module_since = module_since or {}
+        # Phase A behavior: only the monthly full-pipeline run writes the
+        # `Last Researched` date property. Daily/weekly partial runs leave
+        # it alone so the property keeps its "full pipeline ran" semantics.
+        self.writes_last_researched = writes_last_researched
 
     def run(
         self,
@@ -72,10 +82,17 @@ class Orchestrator:
             raise ValueError(f"Unknown task(s): {unknown}. Known: {list(TASK_REGISTRY)}")
         tasks = [TASK_REGISTRY[n]() for n in task_names]
 
+        # Phase A: pre-load latest successful run per (account, task) in one
+        # SQLite GROUP BY so the per-account threads can decide skip-vs-run
+        # without hitting the DB themselves.
+        freshness = self.run_log.latest_successful_runs(
+            [a.page_id for a in accounts],
+        ) if self.module_since else {}
+
         outcomes: list[AccountOutcome] = []
         with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
             futures = {
-                pool.submit(self._process_account, acc, tasks, dry_run): acc
+                pool.submit(self._process_account, acc, tasks, dry_run, freshness): acc
                 for acc in accounts
             }
             for fut in as_completed(futures):
@@ -101,7 +118,11 @@ class Orchestrator:
     # ---- internal ----
 
     def _process_account(
-        self, account: Account, tasks: list[Task], dry_run: bool,
+        self,
+        account: Account,
+        tasks: list[Task],
+        dry_run: bool,
+        freshness: dict[tuple[str, str], dict[str, Any]] | None = None,
     ) -> AccountOutcome:
         results: list[TaskResult] = []
         gate_failed = False
@@ -109,8 +130,17 @@ class Orchestrator:
         # task receives this and can read facts that earlier tasks already gathered
         # (saves search iterations on overlapping data — modules 5 + 14 use this).
         context: dict[str, Any] = {}
+        freshness = freshness or {}
 
         for task in tasks:
+            # Phase A freshness gate. If the user passed --module-since for
+            # this task name AND there's a recent enough successful row in
+            # runs.db, skip the LLM call and inject prior output into the
+            # context envelope so downstream tasks still see it.
+            skipped = self._maybe_skip_fresh(account, task, freshness, context, results)
+            if skipped:
+                continue
+
             log.info("[%s] %s — running…", account.name, task.name)
             result = task.run(account.name, provider=self.provider, context=context)
             results.append(result)
@@ -154,6 +184,86 @@ class Orchestrator:
             account=account, task_results=results, overall_confidence=overall_conf,
             overall_status=overall_status, wrote_to_notion=True,
         )
+
+    def _maybe_skip_fresh(
+        self,
+        account: Account,
+        task: Task,
+        freshness: dict[tuple[str, str], dict[str, Any]],
+        context: dict[str, Any],
+        results: list[TaskResult],
+    ) -> bool:
+        """Phase A freshness gate. Returns True iff the task was skipped.
+
+        Skip rule: the user passed `--module-since <task>:<DAYS>` AND
+        `freshness[(account.page_id, task.name)]` exists AND its started_at is
+        within `DAYS` of now. When we skip, we inject the prior `output_json`
+        into the context envelope and append a synthetic `TaskResult` so the
+        page-body writeback still has the section content (otherwise daily
+        runs would erase the page body each time they skip).
+        """
+        threshold_days = self.module_since.get(task.name)
+        if threshold_days is None:
+            return False
+        prev = freshness.get((account.page_id, task.name))
+        if not prev or not prev.get("started_at"):
+            return False
+        try:
+            prev_dt = datetime.fromisoformat(prev["started_at"].replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        now = datetime.now(tz=prev_dt.tzinfo) if prev_dt.tzinfo else datetime.utcnow()
+        if (now - prev_dt) > timedelta(days=threshold_days):
+            return False  # stale; run it
+
+        # Fresh — skip the LLM call. Replay the prior output into context and
+        # also synthesize a TaskResult so the writeback path renders the page
+        # body and properties from the cached output. The synthesized result
+        # carries zero cost (no tokens, no searches) — its only purpose is to
+        # re-emit the cached body.
+        import json
+        try:
+            prior_output = json.loads(prev["output_json"]) if prev.get("output_json") else None
+        except (ValueError, TypeError):
+            prior_output = None
+        if prior_output is None:
+            return False  # no usable cache, fall through to a real run
+
+        if prior_output is not None:
+            context[task.name] = prior_output
+            # Strip the ephemeral _account_name field if any leaked into cache.
+            prior_output.pop("_account_name", None)
+            prior_output["_account_name"] = account.name
+            fields = task.to_fields(prior_output)
+            page_blocks = task.to_blocks(prior_output)
+            signal_sections = task.to_signal_sections(prior_output)
+            prior_output.pop("_account_name", None)
+            synthesized = TaskResult(
+                task_name=task.name, output=prior_output,
+                confidence=prev.get("confidence") or "low",
+                fields=fields, page_blocks=page_blocks,
+                signal_sections=signal_sections,
+                section=task.section, subsection=task.subsection,
+                sources=prior_output.get("sources", []) or [],
+                search_count=0,
+                input_tokens=0, output_tokens=0,
+                duration_seconds=0.0,
+                prompt_version=prev.get("prompt_version") or "cached",
+                provider_name=self.provider.name,
+                cached_input_tokens=0,
+                model_used=None,
+                tool_results_seen=[],
+                citations=prior_output.get("citations", []) or [],
+                error=None,
+            )
+            results.append(synthesized)
+
+        log.info(
+            "[%s] %s — SKIPPED (fresh: %s, threshold %dd, prior_conf=%s)",
+            account.name, task.name, prev["started_at"], threshold_days,
+            prev.get("confidence"),
+        )
+        return True
 
     def _handle_gate_failure(
         self, account: Account, results: list[TaskResult], dry_run: bool,
@@ -232,6 +342,7 @@ class Orchestrator:
             research_blocks=blocks,
             dry_run=False,
             label=self.label,
+            writes_last_researched=self.writes_last_researched,
         )
 
 

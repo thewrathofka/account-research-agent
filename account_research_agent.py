@@ -58,6 +58,44 @@ def _validate_label(label: str | None) -> str | None:
     return label
 
 
+def _parse_module_since(spec: str | None) -> dict[str, int]:
+    """Parse `--module-since "module_NN:DAYS,module_MM:DAYS"` → {name: days}.
+
+    Returns {} for None/empty. Validates task names against TASK_REGISTRY and
+    rejects non-positive day counts so a typo halts before the run.
+    """
+    if not spec:
+        return {}
+    out: dict[str, int] = {}
+    for pair in spec.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        if ":" not in pair:
+            raise argparse.ArgumentTypeError(
+                f"--module-since entry {pair!r} must be `task_name:DAYS`."
+            )
+        name, days_str = pair.split(":", 1)
+        name = name.strip()
+        if name not in TASK_REGISTRY:
+            raise argparse.ArgumentTypeError(
+                f"--module-since: unknown task {name!r}. "
+                f"Known: {sorted(TASK_REGISTRY)}"
+            )
+        try:
+            days = int(days_str.strip())
+        except ValueError as e:
+            raise argparse.ArgumentTypeError(
+                f"--module-since: {name}:{days_str} — DAYS must be an integer."
+            ) from e
+        if days <= 0:
+            raise argparse.ArgumentTypeError(
+                f"--module-since: {name}:{days} — DAYS must be positive."
+            )
+        out[name] = days
+    return out
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Research account profiles via the active LLM provider + tools.")
     p.add_argument("--rep", default=REP_KATARINA,
@@ -70,7 +108,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         "Useful for single-account smoke tests targeting a "
                         "specific company.")
     p.add_argument("--since", type=int, default=None, metavar="DAYS",
-                   help="Only accounts not researched in the last N days")
+                   help="Only accounts not researched in the last N days "
+                        "(account-level filter via the Notion `Last Researched` "
+                        "property; the monthly full-pipeline run is the only "
+                        "job that writes that property)")
+    p.add_argument("--module-since", default=None, metavar="SPEC",
+                   help="Per-module freshness gating. Comma-separated "
+                        "`module_NN:DAYS` pairs (e.g. "
+                        "'module_06_structural_news:1,module_07_trigger_events:1,"
+                        "module_14_hiring_signal:7'). Modules with a fresh "
+                        "successful row within the threshold are skipped; the "
+                        "prior output is injected into the context envelope "
+                        "for downstream tasks. Modules not listed run normally.")
     from tasks import PHASE2_TASKS as _default_tasks
     p.add_argument("--tasks", default=",".join(_default_tasks),
                    help=(
@@ -160,6 +209,14 @@ def main(argv: list[str] | None = None) -> int:
 
     task_names = [t.strip() for t in args.tasks.split(",") if t.strip()]
 
+    # Phase A: parse --module-since "module_NN:DAYS,module_MM:DAYS" → dict.
+    module_since = _parse_module_since(args.module_since)
+    # Auto-derive writes_last_researched: the property keeps "full pipeline ran"
+    # semantics, so only runs that include every PHASE2 task write it. Daily/
+    # weekly partial runs leave Last Researched alone.
+    from tasks import PHASE2_TASKS
+    writes_last_researched = set(PHASE2_TASKS).issubset(set(task_names))
+
     # Stamp the run boundary BEFORE work begins so the cost summary can filter
     # task_runs rows to just-this-batch (vs lifetime totals).
     batch_started_at = iso_now()
@@ -173,7 +230,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         orch = Orchestrator(crm=crm, run_log=run_log, provider=provider,
-                            concurrency=args.concurrency, label=args.label)
+                            concurrency=args.concurrency, label=args.label,
+                            module_since=module_since,
+                            writes_last_researched=writes_last_researched)
         outcomes = orch.run(accounts, task_names, dry_run=args.dry_run)
 
     print("\n--- Summary ---")
