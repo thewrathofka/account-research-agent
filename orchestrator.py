@@ -51,11 +51,13 @@ class Orchestrator:
         run_log: RunLog,
         provider: LLMProvider,
         concurrency: int = config.DEFAULT_CONCURRENCY,
+        label: str | None = None,
     ):
         self.crm = crm
         self.run_log = run_log
         self.provider = provider
         self.concurrency = concurrency
+        self.label = label
         self.git_sha = _current_git_sha()
 
     def run(
@@ -173,6 +175,7 @@ class Orchestrator:
         try:
             wrote = write_gate_failure_to_notion(
                 self.crm, account, results, confidence, dry_run=False,
+                label=self.label,
             )
         except Exception as e:
             log.exception("[%s] Notion write failed (gate path)", account.name)
@@ -220,13 +223,14 @@ class Orchestrator:
     ) -> None:
         """Delegate to writeback.write_account_outcome — single source of truth
         for property merging, idempotent block append, and write ordering."""
-        blocks = _research_section_blocks(results)
+        blocks = _research_section_blocks(results, label=self.label)
         write_account_outcome(
             self.crm, account, results,
             overall_status=overall_status,
             overall_confidence=overall_conf,
             research_blocks=blocks,
             dry_run=False,
+            label=self.label,
         )
 
 
@@ -405,17 +409,28 @@ def _citation_footnote_bullet(c: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
+def _research_section_blocks(
+    results: list[TaskResult],
+    *,
+    label: str | None = None,
+) -> list[dict[str, Any]]:
     """Assemble page-body blocks in the prescribed section order.
 
     Each task contributes its page_blocks to (section, subsection). The orchestrator
     groups by section, then renders top-level heading_2 + optional heading_3 sub-
     sections, in the fixed order from _SECTION_ORDER.
 
+    `label` (e.g. "phase2-baseline" or "haiku-synthesis") tags the section
+    heading so multiple runs with different labels coexist on the same Notion
+    page for variant comparison. None → unlabeled section that replaces any
+    prior unlabeled section.
+
     Tasks targeting an unknown section land in a fallback "Other" section at the end.
     """
     today = date.today().isoformat()
-    blocks: list[dict[str, Any]] = [crm_module.heading_2(f"Research — {today}")]
+    blocks: list[dict[str, Any]] = [
+        crm_module.heading_2(crm_module.build_section_heading_text(today, label))
+    ]
 
     # Group: (section, subsection) -> list[TaskResult]
     grouped: dict[tuple[str, str | None], list[TaskResult]] = {}
@@ -427,14 +442,9 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
         else:
             other.append(r)
 
-    # Collect sources across all tasks (deduped, ordered by first appearance).
-    all_sources: list[str] = []
-    seen_sources: set[str] = set()
-    for r in results:
-        for url in r.sources:
-            if url and url not in seen_sources:
-                all_sources.append(url)
-                seen_sources.add(url)
+    # v3.0.0 (2026-05-12): Global page-bottom "Sources" catch-all heading
+    # removed. Every page-body module now emits inline `[N]` clickable
+    # citations, making the trailing URL dump redundant noise.
 
     # Collect per-signal subsections from ANY task (regardless of declared
     # section). Rendered under News so every Buying Signals tag has a sourced
@@ -513,11 +523,12 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
                 remap = per_task_remap.get(r.task_name, {})
                 blocks.extend(_rewrite_block_citation_markers(r.page_blocks or [], remap))
 
-        # Per-section citation footnote list, after all content, before errors.
-        if section_citations:
-            blocks.append(crm_module.paragraph("Sources:"))
-            for c in section_citations:
-                blocks.append(_citation_footnote_bullet(c))
+        # v3.0.0 (2026-05-12): Per-section "Sources:" footnote block removed.
+        # Inline `[N]` markers are already clickable links via
+        # _rewrite_block_citation_markers — the trailing bullet list was just
+        # visual noise. `section_citations` is still computed so the per-task
+        # remap produces correctly-numbered link spans, it's just no longer
+        # rendered as a separate footnote section.
 
         # Emit error notes for any failed tasks in this section.
         for r in section_errors:
@@ -531,12 +542,6 @@ def _research_section_blocks(results: list[TaskResult]) -> list[dict[str, Any]]:
                 blocks.append(crm_module.paragraph(f"⚠ {r.task_name} failed: {r.error}"))
                 continue
             blocks.extend(r.page_blocks or [])
-
-    # Single deduped sources block at the very end.
-    if all_sources:
-        blocks.append(crm_module.heading_3("Sources"))
-        for url in all_sources:
-            blocks.append(crm_module.bullet(url))
 
     blocks.append(crm_module.divider())
     return blocks

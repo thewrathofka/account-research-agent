@@ -15,6 +15,8 @@ class Module03RevenueModel(Task):
     subsection = None
     prompt_module = prompt
     synthesis_only = True   # reads ResearchPass output, no own tools
+    model_tier = "fast"     # 2026-05-12 cost-cutting: revenue model is pattern
+                            # extraction from research_pass text, Haiku handles fine
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         return {}  # this module writes only to the page body, not to properties

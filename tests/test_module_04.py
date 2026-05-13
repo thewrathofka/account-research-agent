@@ -28,7 +28,7 @@ def test_tag_vocab_has_kalis_tbauction_examples() -> None:
 # ---- prompt + schema ----
 
 def test_prompt_metadata() -> None:
-    assert prompt.VERSION.startswith("v2.")
+    assert prompt.VERSION.startswith("v3.")
     # System prompt must forbid the v1.x failure modes.
     sys_text = prompt.SYSTEM_PROMPT.lower()
     assert "cold-email" in sys_text or "cold email" in sys_text
@@ -36,18 +36,19 @@ def test_prompt_metadata() -> None:
     assert "horoscope" in sys_text
 
 
-def test_schema_accepts_valid_narrative_output() -> None:
-    sample = {
-        "narrative": (
-            "TBAuction operates an auction marketplace in a category dominated "
-            "by Meta Marketplace [1]. Their conversion play is teaching sellers "
-            "in specific categories that auctions outperform 'list it on "
-            "Marketplace' for high-value goods [2].\n\nThey are expanding into "
-            "Italy [3], compounding the creative challenge — education-first "
-            "creative across product demos, comparison framing, and seller "
-            "success stories, localized for Italian sellers, while keeping "
-            "home-market demand-gen alive."
-        ),
+def _valid_sample() -> dict:
+    return {
+        "intro": "TBAuction operates an auction marketplace in a category dominated by Meta Marketplace [1].",
+        "pain_points": [
+            {
+                "label": "Category-perception battle vs Marketplace apps",
+                "body": "TBAuction's conversion play is teaching sellers in specific categories that auctions outperform 'list it on Marketplace' for high-value goods [2].",
+            },
+            {
+                "label": "Italy launch — new-market creative load",
+                "body": "Expanding into Italy [3] compounds the creative challenge: education-first creative across product demos and seller success stories, localized for Italian sellers, while keeping home-market demand-gen alive.",
+            },
+        ],
         "tags": ["audience education", "competitive displacement", "localization",
                  "new territory", "creative production"],
         "citations": [
@@ -59,66 +60,59 @@ def test_schema_accepts_valid_narrative_output() -> None:
                     "https://reuters.com/y"],
         "confidence": "high",
     }
-    jsonschema.validate(sample, prompt.JSON_SCHEMA)
+
+
+def test_schema_accepts_valid_intro_and_pain_points_output() -> None:
+    jsonschema.validate(_valid_sample(), prompt.JSON_SCHEMA)
 
 
 def test_schema_rejects_unknown_tag() -> None:
-    bad = {
-        "narrative": "x" * 60,
-        "tags": ["audience education", "vibes_based_tag"],  # second is not in enum
-        "citations": [],
-        "sources": [],
-        "confidence": "medium",
-    }
+    bad = _valid_sample()
+    bad["tags"] = ["audience education", "vibes_based_tag"]
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(bad, prompt.JSON_SCHEMA)
 
 
-def test_schema_rejects_empty_narrative() -> None:
-    bad = {
-        "narrative": "",
-        "tags": ["strategy"],
-        "citations": [],
-        "sources": [],
-        "confidence": "low",
-    }
+def test_schema_rejects_empty_intro() -> None:
+    bad = _valid_sample()
+    bad["intro"] = ""
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, prompt.JSON_SCHEMA)
+
+
+def test_schema_rejects_empty_pain_points_list() -> None:
+    bad = _valid_sample()
+    bad["pain_points"] = []  # minItems=1
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, prompt.JSON_SCHEMA)
+
+
+def test_schema_rejects_pain_point_missing_body() -> None:
+    bad = _valid_sample()
+    bad["pain_points"] = [{"label": "only a label"}]
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(bad, prompt.JSON_SCHEMA)
 
 
 def test_schema_rejects_too_many_tags() -> None:
-    too_many = {
-        "narrative": "x" * 60,
-        "tags": ["creative production", "localization", "new territory",
-                 "strategy", "audience education", "competitive displacement"],
-        "citations": [],
-        "sources": [],
-        "confidence": "high",
-    }
+    too_many = _valid_sample()
+    too_many["tags"] = ["creative production", "localization", "new territory",
+                       "strategy", "audience education", "competitive displacement"]
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(too_many, prompt.JSON_SCHEMA)
 
 
 def test_schema_accepts_zero_tags() -> None:
-    """Thin research → narrative-only output should still validate."""
-    sample = {
-        "narrative": "x" * 60,
-        "tags": [],
-        "citations": [],
-        "sources": [],
-        "confidence": "low",
-    }
+    """Thin research → pain points without tags should still validate."""
+    sample = _valid_sample()
+    sample["tags"] = []
+    sample["confidence"] = "low"
     jsonschema.validate(sample, prompt.JSON_SCHEMA)
 
 
 def test_schema_rejects_citation_missing_url() -> None:
-    bad = {
-        "narrative": "x" * 60,
-        "tags": [],
-        "citations": [{"n": 1, "title": "no url here"}],  # url required
-        "sources": [],
-        "confidence": "low",
-    }
+    bad = _valid_sample()
+    bad["citations"] = [{"n": 1, "title": "no url here"}]
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(bad, prompt.JSON_SCHEMA)
 
@@ -165,26 +159,31 @@ def test_task_to_fields_emits_empty_multiselect_when_no_tags() -> None:
     assert fields == {crm.PROP_PAIN_POINT_TAGS: {"multi_select": []}}
 
 
-def test_task_to_blocks_emits_paragraphs_then_tag_bullet() -> None:
+def test_task_to_blocks_emits_intro_paragraph_then_pain_bullets_then_tag_bullet() -> None:
     task = Module04PainPoints()
     out = {
-        "narrative": "Paragraph one about positioning.\n\nParagraph two about growth.",
-        "tags": ["strategy", "new territory"],
+        "intro": "Acme is mid-pivot to enterprise AI.",
+        "pain_points": [
+            {"label": "AI receptivity", "body": "They are publicly betting on AI in their own GTM."},
+            {"label": "Brand evolution", "body": "Rebrand rollout across three markets."},
+        ],
+        "tags": ["AI receptivity", "brand evolution"],
         "citations": [],
     }
     blocks = task.to_blocks(out)
-    # 2 paragraphs + 1 tag bullet = 3 (no citations → no footnote section)
-    assert len(blocks) == 3
-    assert blocks[0]["type"] == "paragraph"
-    assert blocks[1]["type"] == "paragraph"
-    assert blocks[2]["type"] == "bulleted_list_item"
-    p1 = blocks[0]["paragraph"]["rich_text"][0]["text"]["content"]
-    p2 = blocks[1]["paragraph"]["rich_text"][0]["text"]["content"]
-    assert p1.startswith("Paragraph one")
-    assert p2.startswith("Paragraph two")
-    tag_line = blocks[2]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
+    types = [b["type"] for b in blocks]
+    # intro paragraph + 2 pain bullets + 1 tag bullet
+    assert types == ["paragraph", "bulleted_list_item", "bulleted_list_item",
+                     "bulleted_list_item"]
+    intro_text = blocks[0]["paragraph"]["rich_text"][0]["text"]["content"]
+    assert intro_text.startswith("Acme is mid-pivot")
+    pp1 = blocks[1]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
+    pp2 = blocks[2]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
+    assert pp1.startswith("AI receptivity — ")
+    assert pp2.startswith("Brand evolution — ")
+    tag_line = blocks[3]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
     assert tag_line.startswith("Pain tags:")
-    assert "strategy" in tag_line and "new territory" in tag_line
+    assert "AI receptivity" in tag_line and "brand evolution" in tag_line
 
 
 def test_to_blocks_keeps_citation_markers_as_plain_text() -> None:
@@ -192,7 +191,10 @@ def test_to_blocks_keeps_citation_markers_as_plain_text() -> None:
     renumbering + link rendering per-section. The task itself stays simple."""
     task = Module04PainPoints()
     out = {
-        "narrative": "Oracle is shifting toward AI infrastructure [1]. Their conversion play targets hyperscaler clients [2].",
+        "intro": "Oracle is shifting toward AI infrastructure [1].",
+        "pain_points": [
+            {"label": "Hyperscaler conversion", "body": "Their conversion play targets hyperscaler clients [2]."},
+        ],
         "tags": [],
         "citations": [
             {"n": 1, "title": "cnbc.com — Q3 FY26", "url": "https://www.cnbc.com/oracle-q3"},
@@ -200,13 +202,15 @@ def test_to_blocks_keeps_citation_markers_as_plain_text() -> None:
         ],
     }
     blocks = task.to_blocks(out)
-    # Just the narrative paragraph — no per-module footnote (orchestrator owns it).
-    assert len(blocks) == 1
-    para_rich = blocks[0]["paragraph"]["rich_text"]
-    assert len(para_rich) == 1, "to_blocks emits plain text; the orchestrator splits + links"
-    content = para_rich[0]["text"]["content"]
-    assert "[1]" in content and "[2]" in content
-    assert "link" not in para_rich[0]["text"]
+    # intro paragraph + 1 pain bullet — no per-module footnote (orchestrator owns it).
+    assert [b["type"] for b in blocks] == ["paragraph", "bulleted_list_item"]
+    intro_rich = blocks[0]["paragraph"]["rich_text"]
+    assert len(intro_rich) == 1, "to_blocks emits plain text; the orchestrator splits + links"
+    assert "[1]" in intro_rich[0]["text"]["content"]
+    assert "link" not in intro_rich[0]["text"]
+    bullet_rich = blocks[1]["bulleted_list_item"]["rich_text"]
+    assert "[2]" in bullet_rich[0]["text"]["content"]
+    assert "link" not in bullet_rich[0]["text"]
 
 
 def test_to_blocks_omits_footnote_bullets_module_side() -> None:
@@ -215,7 +219,8 @@ def test_to_blocks_omits_footnote_bullets_module_side() -> None:
     the bullets twice on the page."""
     task = Module04PainPoints()
     out = {
-        "narrative": "Claim with [1] and [2].",
+        "intro": "Intro with [1].",
+        "pain_points": [{"label": "Pain", "body": "Body claim [2]."}],
         "tags": [],
         "citations": [
             {"n": 1, "title": "a", "url": "https://example.com/a"},
@@ -224,14 +229,15 @@ def test_to_blocks_omits_footnote_bullets_module_side() -> None:
     }
     blocks = task.to_blocks(out)
     types = [b["type"] for b in blocks]
-    # Should be: just the narrative paragraph. No footnote-style bullets.
-    assert types == ["paragraph"]
+    # intro paragraph + one pain bullet. No `[N] title` footnote-style bullets.
+    assert types == ["paragraph", "bulleted_list_item"]
 
 
 def test_task_to_blocks_drops_unknown_tags_from_bullet() -> None:
     task = Module04PainPoints()
     out = {
-        "narrative": "x" * 60,
+        "intro": "x" * 30,
+        "pain_points": [{"label": "Pain", "body": "Body sentence " * 3}],
         "tags": ["localization", "vibes_based_tag"],
     }
     blocks = task.to_blocks(out)
@@ -242,24 +248,45 @@ def test_task_to_blocks_drops_unknown_tags_from_bullet() -> None:
 
 def test_task_to_blocks_omits_tag_bullet_when_no_valid_tags() -> None:
     task = Module04PainPoints()
-    out = {"narrative": "x" * 60, "tags": []}
+    out = {
+        "intro": "x" * 30,
+        "pain_points": [{"label": "Pain", "body": "Body sentence " * 3}],
+        "tags": [],
+    }
     blocks = task.to_blocks(out)
-    types = [b["type"] for b in blocks]
-    assert "bulleted_list_item" not in types
+    bullet_texts = [
+        "".join(s["text"]["content"] for s in b["bulleted_list_item"]["rich_text"])
+        for b in blocks if b["type"] == "bulleted_list_item"
+    ]
+    assert not any(t.startswith("Pain tags:") for t in bullet_texts)
 
 
-def test_task_to_blocks_empty_narrative_returns_explainer() -> None:
+def test_task_to_blocks_empty_input_returns_explainer() -> None:
     task = Module04PainPoints()
-    blocks = task.to_blocks({"narrative": "", "tags": []})
+    blocks = task.to_blocks({"intro": "", "pain_points": [], "tags": []})
     assert len(blocks) == 1
     text = blocks[0]["paragraph"]["rich_text"][0]["text"]["content"]
-    assert "research" in text.lower() or "narrative" in text.lower()
+    assert "research" in text.lower() or "pain" in text.lower()
+
+
+def test_task_to_blocks_back_compat_with_v2_narrative_cache() -> None:
+    """If runs.db has a cached v2.x output (narrative string instead of
+    intro+pain_points), to_blocks falls back to rendering the narrative as
+    paragraphs so old cached entries don't crash."""
+    task = Module04PainPoints()
+    out = {
+        "narrative": "Paragraph one about positioning.\n\nParagraph two about growth.",
+        "tags": ["strategy"],
+    }
+    blocks = task.to_blocks(out)
+    types = [b["type"] for b in blocks]
+    assert types == ["paragraph", "paragraph", "bulleted_list_item"]
 
 
 def test_task_to_signal_sections_empty() -> None:
     """Module 4 doesn't contribute Buying Signals tags."""
     task = Module04PainPoints()
-    assert task.to_signal_sections({"narrative": "x", "tags": []}) == []
+    assert task.to_signal_sections({"intro": "x", "pain_points": [], "tags": []}) == []
 
 
 # ---- build_user_message ----

@@ -217,10 +217,11 @@ def test_citation_footnote_bullet_handles_missing_title() -> None:
 
 # ---- end-to-end: _research_section_blocks ----
 
-def test_research_section_blocks_renders_section_footnotes() -> None:
-    """Two tasks in Overview each contribute citations + claims → page-body
-    section has paragraph claims with rewritten linked markers + a single
-    Sources footnote list at the section end."""
+def test_research_section_blocks_renders_inline_links_no_footnote_section() -> None:
+    """v3.0.0 (2026-05-12): per-section Sources footnote bullet list was
+    removed. Inline `[N]` markers remain clickable links via the per-task
+    remap, so each module's claims still navigate to the cited URL, but
+    no separate "Sources:" bullet list is appended at the section end."""
     r_a = _make_result(
         task_name="module_03_revenue_model", section="Overview",
         page_blocks=[crm_module.paragraph("Revenue model claim [1].")],
@@ -232,30 +233,37 @@ def test_research_section_blocks_renders_section_footnotes() -> None:
         citations=[{"n": 1, "title": "B1", "url": "https://example.com/b1"}],
     )
     out = _research_section_blocks([r_a, r_b])
-    # Find the Overview section content
-    texts = []
-    for b in out:
-        if b["type"] == "paragraph":
-            content = "".join(r.get("text", {}).get("content", "") for r in b["paragraph"]["rich_text"])
-            texts.append(("p", content))
-        elif b["type"] == "bulleted_list_item":
-            content = "".join(r.get("text", {}).get("content", "") for r in b["bulleted_list_item"]["rich_text"])
-            texts.append(("b", content))
-        elif b["type"] == "heading_3":
-            content = "".join(r.get("text", {}).get("content", "") for r in b["heading_3"]["rich_text"])
-            texts.append(("h", content))
-    # Expect: heading "Research — …", heading_3 "Overview", paragraph "Revenue
-    # model claim [1].", paragraph "Structure claim [2].", paragraph "Sources:",
-    # bullet "[1] A1", bullet "[2] B1".
-    flat = " | ".join(f"{k}:{v}" for k, v in texts)
+    # Inline-rewritten markers: A's [1] stays [1], B's [1] becomes [2].
+    para_texts = [
+        "".join(r.get("text", {}).get("content", "") for r in b["paragraph"]["rich_text"])
+        for b in out if b["type"] == "paragraph"
+    ]
+    flat = " | ".join(para_texts)
     assert "Revenue model claim [1]." in flat
-    assert "Structure claim [2]." in flat  # renumbered to 2
-    assert "Sources:" in flat
-    assert "[1] A1" in flat
-    assert "[2] B1" in flat
+    assert "Structure claim [2]." in flat
+    # No Sources: paragraph and no footnote bullets.
+    assert "Sources:" not in flat
+    bullet_texts = [
+        "".join(r.get("text", {}).get("content", "") for r in b["bulleted_list_item"]["rich_text"])
+        for b in out if b["type"] == "bulleted_list_item"
+    ]
+    assert not any(t.startswith("[") and " " in t for t in bullet_texts), (
+        "no `[N] title` footnote bullets should be emitted at section end"
+    )
+    # And [1]/[2] inline markers carry the correct link URLs.
+    inline_links: list[tuple[str, str]] = []
+    for b in out:
+        if b["type"] != "paragraph":
+            continue
+        for span in b["paragraph"]["rich_text"]:
+            link = span.get("text", {}).get("link")
+            if link:
+                inline_links.append((span["text"]["content"], link["url"]))
+    assert ("[1]", "https://example.com/a1") in inline_links
+    assert ("[2]", "https://example.com/b1") in inline_links
 
 
-def test_research_section_blocks_does_not_emit_footnotes_for_section_without_citations() -> None:
+def test_research_section_blocks_no_footnote_block_for_section_without_citations() -> None:
     r = _make_result(
         task_name="module_03_revenue_model", section="Overview",
         page_blocks=[crm_module.paragraph("Plain claim, no markers.")],
@@ -269,6 +277,4 @@ def test_research_section_blocks_does_not_emit_footnotes_for_section_without_cit
             r.get("text", {}).get("content", "") for r in b["paragraph"]["rich_text"]
         )
     ]
-    # The page-wide tail "Sources" is a heading_3, not a paragraph. So this
-    # paragraph-typed "Sources:" line should be absent.
     assert sources_lines == []

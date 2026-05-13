@@ -168,6 +168,7 @@ def write_account_outcome(
     overall_confidence: str,
     research_blocks: list[dict[str, Any]] | None,
     dry_run: bool = False,
+    label: str | None = None,
 ) -> bool:
     """Atomic-ish writeback for one account.
 
@@ -175,6 +176,10 @@ def write_account_outcome(
       1. Pre-body properties (Size, Buying Signals, structure notes, etc.)
       2. Page body via CRM.replace_latest_research_section (Fix #2 — idempotent)
       3. Completion properties (Last Researched / Status / Confidence)
+
+    `label` selects which prior section to replace — labeled runs only
+    overwrite the prior section with the same label, so multiple variants
+    coexist on the same page for side-by-side comparison.
 
     Returns True iff Notion writes happened. dry_run=True returns False without
     side effects. On error, the exception bubbles to the caller — they decide
@@ -188,7 +193,9 @@ def write_account_outcome(
         crm.update_properties(account.page_id, pre_body_props)
 
     if research_blocks:
-        crm.replace_latest_research_section(account.page_id, research_blocks)
+        crm.replace_latest_research_section(
+            account.page_id, research_blocks, label=label,
+        )
 
     completion_props = build_completion_payload(overall_confidence, overall_status)
     crm.update_properties(account.page_id, completion_props)
@@ -201,11 +208,14 @@ def write_gate_failure_to_notion(
     results: list[TaskResult],
     confidence: str,
     dry_run: bool = False,
+    label: str | None = None,
 ) -> bool:
     """Write the out-of-scope marker plus a small reason block.
 
     Used by both sync and batch paths so gated accounts have identical Notion
-    state regardless of mode (Fix Appendix #4).
+    state regardless of mode (Fix Appendix #4). `label` is propagated to the
+    section heading so labeled gate-failure runs coexist with labeled passes
+    on the same page.
     """
     if dry_run:
         return False
@@ -213,8 +223,11 @@ def write_gate_failure_to_notion(
     from tasks import GATE_TASKS
     gate_result = next((r for r in results if r.task_name in GATE_TASKS), None)
 
+    heading_text = crm_module.build_section_heading_text(
+        date.today().isoformat(), label,
+    )
     blocks: list[dict[str, Any]] = [
-        crm_module.heading_2(f"{crm_module.AGENT_SECTION_PREFIX}{date.today().isoformat()}"),
+        crm_module.heading_2(heading_text),
         crm_module.paragraph("Out of scope: gate failed (no EU/NA operations confirmed)."),
     ]
     if gate_result and gate_result.output:
@@ -223,7 +236,7 @@ def write_gate_failure_to_notion(
             blocks.append(crm_module.paragraph(f"Reason: {reason}"))
     blocks.append(crm_module.divider())
 
-    crm.replace_latest_research_section(account.page_id, blocks)
+    crm.replace_latest_research_section(account.page_id, blocks, label=label)
     crm.update_properties(
         account.page_id,
         build_completion_payload(confidence, "out_of_scope"),

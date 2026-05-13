@@ -37,6 +37,10 @@ class Module04PainPoints(Task):
     subsection = None
     prompt_module = prompt
     synthesis_only = True
+    model_tier = "fast"     # 2026-05-12 cost-cutting: narrative synthesis is the
+                            # most reasoning-heavy of the fast-tier moves — re-
+                            # evaluate after side-by-side comparison if Haiku
+                            # output reads thin vs Sonnet on the same accounts
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Fold raw_research + the three anchor module outputs into the
@@ -112,25 +116,53 @@ class Module04PainPoints(Task):
         }
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
-        """Emit narrative paragraphs + one tag bullet.
+        """Emit one-line intro paragraph + per-pain-point bullets + tag bullet.
 
-        The narrative may contain `[N]` citation markers as plain text — the
-        orchestrator's per-section citation pass renumbers them and rewrites
-        each marker into a clickable Notion link span pointing to the cited
-        URL. The orchestrator also appends a single section-wide footnote
-        bullet list at the end of `Possible Pain Points`, so this method does
-        NOT emit footnotes itself (single source of truth).
+        v3.0.0 layout: each `pain_points[].label — body` becomes its own
+        bulleted_list_item so the page-body section is scannable in 10
+        seconds. `[N]` citation markers inside intro/body stay as plain
+        text — the orchestrator's per-section citation pass renumbers them
+        and rewrites each marker into a clickable Notion link span.
+
+        Backwards-compatible degraded path: if a run cached a v2.x output
+        with a `narrative` field instead of `pain_points`, render the
+        narrative as paragraphs so old cache entries don't crash. New
+        outputs (v3.0.0+) take the pain_points path.
         """
-        narrative = (output.get("narrative") or "").strip()
-        if not narrative:
+        intro = (output.get("intro") or "").strip()
+        pain_points = output.get("pain_points") or []
+
+        # v2.x fallback (cached old output): narrative string instead of intro+bullets.
+        if not pain_points and (output.get("narrative") or "").strip():
+            narrative = output["narrative"].strip()
+            blocks: list[dict[str, Any]] = []
+            for para in [p.strip() for p in narrative.split("\n\n") if p.strip()]:
+                blocks.append(crm.paragraph(para))
+            tags = [t for t in (output.get("tags") or []) if t in crm.PAIN_POINT_TAG_OPTIONS]
+            if tags:
+                blocks.append(crm.bullet("Pain tags: " + " · ".join(tags)))
+            return blocks
+
+        if not intro and not pain_points:
             return [crm.paragraph(
-                "No narrative produced — research material was insufficient "
-                "to support a specific strategic story this run."
+                "No pain points produced — research material was insufficient "
+                "to support a specific strategic read this run."
             )]
 
-        blocks: list[dict[str, Any]] = []
-        for para in [p.strip() for p in narrative.split("\n\n") if p.strip()]:
-            blocks.append(crm.paragraph(para))
+        blocks = []
+        if intro:
+            blocks.append(crm.paragraph(intro))
+
+        for pp in pain_points:
+            label = (pp.get("label") or "").strip()
+            body = (pp.get("body") or "").strip()
+            if not label and not body:
+                continue
+            if label and body:
+                text = f"{label} — {body}"
+            else:
+                text = label or body
+            blocks.append(crm.bullet(text))
 
         tags = [t for t in (output.get("tags") or []) if t in crm.PAIN_POINT_TAG_OPTIONS]
         if tags:

@@ -79,18 +79,18 @@ def test_subsection_grouping_overview_headcount():
     assert overview_idx < revenue_idx < headcount_idx < headcount_para_idx
 
 
-def test_sources_dedup_and_appear_once_at_end():
-    """Each task's sources are merged and deduped into a single Sources block at the end."""
+def test_no_global_sources_heading_emitted():
+    """v3.0.0: the global page-bottom "Sources" heading_3 was removed —
+    inline `[N]` clickable citations make the trailing URL dump redundant."""
     r1 = _result("a", "Overview", None, [])
     r1.sources = ["http://x.com", "http://y.com"]
     r2 = _result("b", "News", None, [])
-    r2.sources = ["http://x.com", "http://z.com"]  # x is duplicate
+    r2.sources = ["http://x.com", "http://z.com"]
     blocks = _research_section_blocks([r1, r2])
     texts = _block_texts(blocks)
-    sources_idx = next(i for i, t in enumerate(texts) if t == "H3:Sources")
-    bullets = [t for t in texts[sources_idx:] if t.startswith("B:")]
-    urls = [t[2:] for t in bullets]
-    assert urls == ["http://x.com", "http://y.com", "http://z.com"]
+    assert "H3:Sources" not in texts, (
+        "global page-bottom Sources heading should no longer be emitted"
+    )
 
 
 def test_unknown_section_lands_in_other():

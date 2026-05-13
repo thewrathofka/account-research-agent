@@ -1,4 +1,4 @@
-"""Module 5 — Corporate structure. Output → Parent-Child (sibling/child brands)
+"""Module 5 — Corporate structure. Output → sister/child (sibling/child brands)
 + Parent (parent company name; self-name if itself a parent; empty if standalone)."""
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ class Module05CorporateStructure(Task):
     subsection = None
     prompt_module = prompt
     synthesis_only = True   # reads ResearchPass output, no own tools
+    model_tier = "fast"     # 2026-05-12 cost-cutting: standalone/subsidiary/parent
+                            # classification is shallow pattern-matching, Haiku handles
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
         fields: dict[str, Any] = {}
@@ -26,17 +28,22 @@ class Module05CorporateStructure(Task):
         # parent-type companies get their canonical CRM name (not whatever the
         # model chose to call them).
         company_name = output.get("_account_name")
-
-        if structure == "parent" and company_name:
-            fields[crm.PROP_PARENT] = _rich_text(company_name)
-        elif structure == "subsidiary" and parent_name:
-            fields[crm.PROP_PARENT] = _rich_text(parent_name)
-        # standalone → leave empty (don't write the property at all, preserves manual edits)
-
-        # Parent-Child: capture sister/child brands (if any), comma-separated.
         siblings = output.get("notable_sister_or_child_brands") or []
+
+        if structure == "subsidiary" and parent_name:
+            fields[crm.PROP_PARENT] = _rich_text(parent_name)
+        elif company_name and (structure == "parent" or siblings):
+            # Self-name guard for standalone-parents like AlphaSense: the model
+            # often classifies a company as `standalone` even when it owns
+            # notable child brands (e.g. AlphaSense + Tegus). Treat the
+            # presence of any sister/child brand as evidence the company is
+            # itself a parent and write its own name in `Parent`.
+            fields[crm.PROP_PARENT] = _rich_text(company_name)
+        # standalone with no children → leave empty (preserves manual edits)
+
+        # sister/child: capture sister/child brands (if any), comma-separated.
         if siblings:
-            fields[crm.PROP_PARENT_CHILD] = _rich_text(", ".join(siblings))
+            fields[crm.PROP_SISTER_CHILD] = _rich_text(", ".join(siblings))
 
         return fields
 
