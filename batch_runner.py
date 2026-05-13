@@ -56,8 +56,12 @@ def run_batch(
     dry_run: bool = False,
     poll_interval_s: int = 30,
     max_wait_s: int = 24 * 3600,
+    label: str | None = None,
 ) -> list[AccountOutcome]:
-    """Three-pass batch run. Returns AccountOutcome per account."""
+    """Three-pass batch run. Returns AccountOutcome per account.
+
+    `label` tags every section heading so multiple variant runs coexist on
+    the same Notion page (see crm.build_section_heading_text)."""
 
     if not provider.supports_batch:
         raise RuntimeError(
@@ -157,7 +161,7 @@ def run_batch(
                 confidence = "low"
             try:
                 wrote = write_gate_failure_to_notion(
-                    crm, acc, results, confidence, dry_run=dry_run,
+                    crm, acc, results, confidence, dry_run=dry_run, label=label,
                 )
             except Exception as e:
                 log.exception("[%s] Notion write failed (gate path, batch)", acc.name)
@@ -181,13 +185,14 @@ def run_batch(
             ))
             continue
         try:
-            blocks = _research_section_blocks(results)
+            blocks = _research_section_blocks(results, label=label)
             wrote = write_account_outcome(
                 crm, acc, results,
                 overall_status=status,
                 overall_confidence=conf,
                 research_blocks=blocks,
                 dry_run=False,
+                label=label,
             )
             outcomes.append(AccountOutcome(
                 account=acc, task_results=results, overall_confidence=conf,

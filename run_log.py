@@ -192,6 +192,156 @@ class RunLog:
             "searches": row[5] or 0, "seconds": row[6] or 0.0,
         }
 
+    def cost_summary(
+        self,
+        *,
+        since: str | None = None,
+        account_name: str | None = None,
+        git_sha: str | None = None,
+    ) -> dict[str, Any]:
+        """Aggregate USD cost from token + search counters, broken down by
+        per-model, per-task, and per-account. Filter optionally by:
+
+        - since:        ISO timestamp; only rows with started_at >= this
+        - account_name: exact match on the account_name column
+        - git_sha:      exact match on the git_sha column (useful for "what
+                        did this build cost?")
+
+        Cost computation:
+        - LLM cost via config.estimate_usd_cost — uses per-model pricing,
+          counts cached_input_tokens separately. Falls back to the `model`
+          column when `model_used` is null (older rows pre-Phase 1.5a).
+        - Tavily search cost: search_count × TAVILY_COST_PER_SEARCH.
+        - Apify cost is NOT estimated — accumulated on Apify dashboard.
+
+        Returns a dict with totals + three breakdown lists, each sorted by $
+        descending. Suitable for direct rendering by the CLI or cost_report.py.
+        """
+        import config
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if since is not None:
+            clauses.append("started_at >= ?")
+            params.append(since)
+        if account_name is not None:
+            clauses.append("account_name = ?")
+            params.append(account_name)
+        if git_sha is not None:
+            clauses.append("git_sha = ?")
+            params.append(git_sha)
+        where_sql = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+
+        with self._conn() as c:
+            rows = c.execute(
+                f"""SELECT account_name, task_name,
+                          COALESCE(model_used, model) AS model_resolved,
+                          status,
+                          COALESCE(input_tokens, 0),
+                          COALESCE(output_tokens, 0),
+                          COALESCE(cached_input_tokens, 0),
+                          COALESCE(search_count, 0),
+                          COALESCE(error, '')
+                   FROM task_runs{where_sql}""",
+                params,
+            ).fetchall()
+
+        per_account: dict[str, float] = {}
+        per_task: dict[str, dict[str, Any]] = {}
+        per_model: dict[str, dict[str, Any]] = {}
+        total_llm_usd = 0.0
+        total_search_usd = 0.0
+        total_input = 0
+        total_output = 0
+        total_cached_input = 0
+        total_searches = 0
+        total_rows = 0
+        failed_rows = 0
+        failed_tavily_quota = 0
+        successful_account_pairs: set[tuple[str, str]] = set()
+
+        for (acct, task, model, status, in_tok, out_tok, cached_tok, searches, err) in rows:
+            total_rows += 1
+            llm_usd = config.estimate_usd_cost(
+                in_tok, out_tok, model, cached_input_tokens=cached_tok,
+            )
+            search_usd = (searches or 0) * config.TAVILY_COST_PER_SEARCH
+            row_usd = llm_usd + search_usd
+
+            total_llm_usd += llm_usd
+            total_search_usd += search_usd
+            total_input += in_tok
+            total_output += out_tok
+            total_cached_input += cached_tok
+            total_searches += searches
+            if status == "success":
+                successful_account_pairs.add((acct, task))
+            elif status == "failed":
+                failed_rows += 1
+                # Substring detection — "432" + "tavily" in the error message
+                # is a strong signal Tavily's monthly quota tripped (see
+                # tools/web_search.py for the breaker).
+                err_lower = (err or "").lower()
+                if "432" in err_lower and "tavily" in err_lower:
+                    failed_tavily_quota += 1
+
+            per_account[acct] = per_account.get(acct, 0.0) + row_usd
+
+            t = per_task.setdefault(task, {
+                "task": task, "usd": 0.0, "input_tokens": 0,
+                "output_tokens": 0, "cached_input_tokens": 0,
+                "searches": 0, "rows": 0,
+            })
+            t["usd"] += row_usd
+            t["input_tokens"] += in_tok
+            t["output_tokens"] += out_tok
+            t["cached_input_tokens"] += cached_tok
+            t["searches"] += searches
+            t["rows"] += 1
+
+            m_key = model or "(unknown)"
+            m = per_model.setdefault(m_key, {
+                "model": m_key, "usd": 0.0, "input_tokens": 0,
+                "output_tokens": 0, "cached_input_tokens": 0, "rows": 0,
+            })
+            m["usd"] += llm_usd
+            m["input_tokens"] += in_tok
+            m["output_tokens"] += out_tok
+            m["cached_input_tokens"] += cached_tok
+            m["rows"] += 1
+
+        account_count = len(per_account)
+        per_account_list = sorted(
+            [{"account": a, "usd": v} for a, v in per_account.items()],
+            key=lambda x: x["usd"], reverse=True,
+        )
+        per_task_list = sorted(
+            list(per_task.values()), key=lambda x: x["usd"], reverse=True,
+        )
+        per_model_list = sorted(
+            list(per_model.values()), key=lambda x: x["usd"], reverse=True,
+        )
+
+        total_usd = total_llm_usd + total_search_usd
+
+        return {
+            "total_usd": total_usd,
+            "llm_usd": total_llm_usd,
+            "search_usd": total_search_usd,
+            "rows": total_rows,
+            "failed_rows": failed_rows,
+            "failed_tavily_quota": failed_tavily_quota,
+            "accounts": account_count,
+            "avg_per_account_usd": (total_usd / account_count) if account_count else 0.0,
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+            "cached_input_tokens": total_cached_input,
+            "searches": total_searches,
+            "per_account": per_account_list,
+            "per_task": per_task_list,
+            "per_model": per_model_list,
+        }
+
 
 def iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()

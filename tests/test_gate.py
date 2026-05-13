@@ -79,13 +79,13 @@ class FakeCRM:
     def append_blocks(self, page_id, blocks):
         self.block_appends.append((page_id, list(blocks)))
 
-    def replace_latest_research_section(self, page_id, blocks, prefix=None):
+    def replace_latest_research_section(self, page_id, blocks, label=None):
         # Test stand-in for the idempotent write path. We don't model the
         # archive-old-blocks step here — the test doesn't preload prior content —
         # so this is equivalent to append_blocks for assertion purposes.
         self.append_blocks(page_id, blocks)
 
-    def find_latest_agent_section(self, page_id, prefix=None):
+    def find_latest_agent_section(self, page_id, label=None):
         return []
 
     def validate_schema(self, expected=None):

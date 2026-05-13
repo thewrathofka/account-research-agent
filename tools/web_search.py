@@ -8,6 +8,7 @@ tool_version so backend or schema changes invalidate stale entries (Fix #8).
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,6 +18,40 @@ from tavily import TavilyClient
 import config
 from rate_limit import TAVILY_LIMITER
 from run_log import ToolCallCache
+
+
+# ---- Quota-exhaustion circuit breaker (2026-05-12) ----
+#
+# Tavily returns HTTP 432 ("Plan limit exceeded") once the monthly search quota
+# is gone. Without a circuit breaker, every remaining task in the batch makes
+# its own Tavily call, gets the same 432, and ALSO burns Anthropic tokens
+# running its agent loop on what becomes empty/error context. On a 213-account
+# run, that's potentially $100+ of wasted Anthropic spend after the quota dies.
+#
+# The breaker is a process-wide threading.Event set the first time any
+# WebSearchTool instance sees a 432. Subsequent calls (in the same Python
+# process, across all threads) short-circuit to an ERROR string without
+# hitting the API. The error string mirrors the cap-reached one so prompts
+# already understand "produce best-effort output with low confidence."
+#
+# Reset: process exit. There is no auto-reset on a successful call because
+# Tavily's quota is a monthly window — once tripped, you need to top up the
+# plan, which involves a key/plan refresh outside this process anyway.
+_TAVILY_QUOTA_EXHAUSTED = threading.Event()
+
+
+def tavily_quota_exhausted() -> bool:
+    """True iff a Tavily 432 has been observed in this Python process."""
+    return _TAVILY_QUOTA_EXHAUSTED.is_set()
+
+
+def _signal_tavily_quota_exhausted() -> None:
+    _TAVILY_QUOTA_EXHAUSTED.set()
+
+
+def _reset_tavily_quota_flag_for_tests() -> None:
+    """Test-only: clear the breaker so independent test cases don't bleed state."""
+    _TAVILY_QUOTA_EXHAUSTED.clear()
 
 
 WEB_SEARCH_SCHEMA: dict[str, Any] = {
@@ -104,6 +139,17 @@ class WebSearchTool:
                 self._observed_urls.append(u)
 
     def __call__(self, query: str, days: int | None = None) -> str:
+        # Process-wide quota breaker: once Tavily has returned 432 once, every
+        # subsequent call short-circuits — no API call, no counter increment.
+        # Saves Anthropic tokens on a batch that's now guaranteed to fail
+        # downstream (see module docstring).
+        if tavily_quota_exhausted():
+            return (
+                "ERROR: Tavily monthly quota exhausted (HTTP 432). "
+                "Top up at tavily.com and rerun. "
+                "Produce best-effort output with low confidence."
+            )
+
         # Hard cap (Fix Appendix #10): return a tool error BEFORE incrementing the
         # counter or hitting the network, so the model sees the cap clearly and the
         # account does not silently spin past the budget.
@@ -154,6 +200,28 @@ class WebSearchTool:
                 response = self.client.search(**search_kwargs)
         except httpx.HTTPStatusError as e:
             status = e.response.status_code if e.response is not None else None
+            if status == 432:
+                _signal_tavily_quota_exhausted()
+                return (
+                    "ERROR: Tavily monthly quota exhausted (HTTP 432). "
+                    "Top up at tavily.com and rerun. "
+                    "Produce best-effort output with low confidence."
+                )
+            if status == 400:
+                # Tavily rejects malformed queries with 400 (e.g. characters
+                # the API can't parse, query too long for the topic, weird
+                # encoding). Return a structured error rather than propagating
+                # — the model can re-issue with a tighter query. Do NOT cache
+                # 400 as a real result (different query strings shouldn't
+                # share its fate); skip cache.store entirely.
+                return (
+                    "ERROR: search rejected (HTTP 400 Bad Request). "
+                    "The query may be too long, contain unsupported characters, "
+                    "or combine incompatible parameters. "
+                    "Reformulate as a concise query (under 200 chars, plain "
+                    "ASCII, no JSON / parentheses / unusual punctuation) and "
+                    "call web_search again."
+                )
             if status in (408, 425, 429, 500, 502, 503, 504):
                 text = f"ERROR: retryable search failure: {status}"
                 # Tiny TTL so a transient blip doesn't poison the cache for 24h.
@@ -164,6 +232,30 @@ class WebSearchTool:
             text = f"ERROR: retryable search failure: {type(e).__name__}"
             self.cache.store(self.name, args, text, ttl_minutes=30)
             return text
+        except Exception as e:
+            # The Tavily Python SDK currently uses `requests` internally, so
+            # status codes surface as requests.exceptions.HTTPError (not
+            # httpx). Match by string pattern — brittle but contained, and
+            # the alternative (burning the rest of the batch on guaranteed
+            # failures) is worse.
+            msg = str(e)
+            msg_lower = msg.lower()
+            if "432" in msg and "tavily" in msg_lower:
+                _signal_tavily_quota_exhausted()
+                return (
+                    "ERROR: Tavily monthly quota exhausted (HTTP 432). "
+                    "Top up at tavily.com and rerun. "
+                    "Produce best-effort output with low confidence."
+                )
+            if "400" in msg and ("bad request" in msg_lower or "tavily" in msg_lower):
+                return (
+                    "ERROR: search rejected (HTTP 400 Bad Request). "
+                    "Reformulate as a concise query (under 200 chars, plain "
+                    "ASCII, no JSON / parentheses / unusual punctuation) and "
+                    "call web_search again."
+                )
+            # Other unexpected exceptions: bubble so the task records a real failure.
+            raise
 
         results = response.get("results", []) or []
         if not results:

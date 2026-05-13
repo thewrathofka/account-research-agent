@@ -5,3 +5,5 @@ __pycache__/
 .DS_Store
 output_*.json
 runs.db
+runs.db-shm
+runs.db-wal

@@ -159,4 +159,16 @@ def estimate_usd_cost(
     )
 
 
+# ---- Tool-side cost rates (USD per call) ----
+# Tavily: production tier is $0.008/search; the 1K/month free quota effectively
+# zeroes out small batches but we treat all searches at the paid rate for the
+# end-of-run cost printout (under-reporting hides real cost when scaling up).
+TAVILY_COST_PER_SEARCH = 0.008
+
+# Apify: cost is per-actor and per-result, accumulated on the Apify dashboard.
+# We do NOT estimate Apify cost from the run log — `tool_results_seen` doesn't
+# distinguish "free LinkedIn page hit" from "paid Meta ad library page hit".
+# The CLI cost block flags Apify spend as "see Apify dashboard" instead.
+
+
 _validate_keys()

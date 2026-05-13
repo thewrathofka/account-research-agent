@@ -26,7 +26,7 @@ PROP_LEAD_SIGNAL = "Lead Signal"
 PROP_NEW_HIRE = "New Hire"
 PROP_COMPANY_STRUCTURE = "Company Structure"  # no trailing space — must match Notion exactly
 PROP_STRUCTURE_NOTES = "Structure Notes"
-PROP_PARENT_CHILD = "Parent-Child"
+PROP_SISTER_CHILD = "sister/child"
 PROP_PARENT = "Parent"
 PROP_PAIN_POINT_TAGS = "Pain Point Tags"
 PROP_NOTES = "Notes"
@@ -90,7 +90,47 @@ EXPECTED_NOTION_PROPERTIES: dict[str, str] = {
 
 # Notion appends a section per run; we tag the heading so future runs can locate
 # and replace the previous one (Fix Appendix #2 — idempotent appends).
+#
+# Heading shapes (2026-05-12 update):
+#   unlabeled : "Research — YYYY-MM-DD"                     ← default
+#   labeled   : "Research — YYYY-MM-DD — <label>"           ← --label flag
+#
+# Label-aware replacement: a labeled run only archives the prior heading with
+# the same label, so multiple variants (e.g. "baseline" + "haiku-synthesis")
+# coexist on the same page for side-by-side comparison.
 AGENT_SECTION_PREFIX = "Research — "
+AGENT_SECTION_LABEL_SEP = " — "
+
+
+def build_section_heading_text(today_iso: str, label: str | None = None) -> str:
+    """Return the heading_2 text the agent emits at the top of every research
+    section. Pure function so writeback + tests share one source of truth."""
+    if label:
+        return f"{AGENT_SECTION_PREFIX}{today_iso}{AGENT_SECTION_LABEL_SEP}{label}"
+    return f"{AGENT_SECTION_PREFIX}{today_iso}"
+
+
+def _heading_matches_label(text: str, label: str | None) -> bool:
+    """True iff `text` is an agent-emitted research heading with the given
+    label (None = unlabeled). Used by find_latest_agent_section to scope
+    replacement to a single variant on multi-variant pages.
+
+    Unlabeled match: exactly `Research — YYYY-MM-DD` (no trailing label).
+    Labeled match  : ends with `<sep><label>` after a date prefix.
+    """
+    if not text.startswith(AGENT_SECTION_PREFIX):
+        return False
+    tail = text[len(AGENT_SECTION_PREFIX):]
+    if label is None:
+        # Must be ONLY a date — no second `<sep>` component.
+        return AGENT_SECTION_LABEL_SEP not in tail
+    suffix = f"{AGENT_SECTION_LABEL_SEP}{label}"
+    if not text.endswith(suffix):
+        return False
+    # Must have a date component before the label, i.e. at least
+    # `Research — XXXX-XX-XX — <label>` shape (not `Research — <label>`).
+    date_part = text[len(AGENT_SECTION_PREFIX):-len(suffix)]
+    return bool(date_part)
 
 
 @dataclass
@@ -165,14 +205,23 @@ class NotionCRM:
     # ---- Idempotent agent section management (Fix Appendix #2) ----
 
     def find_latest_agent_section(
-        self, page_id: str, prefix: str = AGENT_SECTION_PREFIX,
+        self,
+        page_id: str,
+        *,
+        label: str | None = None,
     ) -> list[str]:
-        """Return block IDs covering the most recent agent-emitted section.
+        """Return block IDs covering the most recent agent-emitted section
+        whose heading_2 matches the given label.
 
-        The agent emits a heading_2 starting with `prefix`, then a body of blocks,
-        then a divider. We pick the LAST such heading_2 and return every block from
-        that heading through the next divider (inclusive). On rerun we archive
-        these IDs before appending fresh content so research sections never duplicate.
+        The agent emits a heading_2 of the form `Research — YYYY-MM-DD[ — label]`,
+        then a body of blocks, then a divider. We pick the LAST such heading_2
+        whose label matches and return every block from that heading through
+        the next divider (inclusive). On rerun we archive these IDs before
+        appending fresh content so research sections never duplicate.
+
+        With label=None: matches only unlabeled headings (no trailing label).
+        With label="x": matches only headings ending in ` — x`. Different-
+        labeled sections coexist on the same page for variant comparison.
         """
         cursor: str | None = None
         all_children: list[dict[str, Any]] = []
@@ -186,38 +235,48 @@ class NotionCRM:
                 break
             cursor = resp.get("next_cursor")
 
-        # Find the LAST heading_2 whose text starts with prefix.
+        # Find the LAST heading_2 whose text matches the label.
         heading_idx = -1
         for i, block in enumerate(all_children):
             if block.get("type") != "heading_2":
                 continue
             rich = block.get("heading_2", {}).get("rich_text", []) or []
             text = "".join(rt.get("plain_text", "") for rt in rich)
-            if text.startswith(prefix):
+            if _heading_matches_label(text, label):
                 heading_idx = i
         if heading_idx < 0:
             return []
 
         # Walk forward to and including the next divider (or end of page).
+        # If we hit ANOTHER agent research heading first, stop before it so
+        # we don't archive the next variant's content alongside ours.
         end_idx = len(all_children)
         for j in range(heading_idx + 1, len(all_children)):
-            if all_children[j].get("type") == "divider":
+            b = all_children[j]
+            if b.get("type") == "divider":
                 end_idx = j + 1  # include the divider itself
                 break
+            if b.get("type") == "heading_2":
+                rich = b.get("heading_2", {}).get("rich_text", []) or []
+                text = "".join(rt.get("plain_text", "") for rt in rich)
+                if text.startswith(AGENT_SECTION_PREFIX):
+                    end_idx = j  # stop BEFORE the next agent heading
+                    break
 
         return [b["id"] for b in all_children[heading_idx:end_idx]]
 
     def replace_latest_research_section(
-        self, page_id: str, blocks: Iterable[dict[str, Any]],
-        prefix: str = AGENT_SECTION_PREFIX,
+        self,
+        page_id: str,
+        blocks: Iterable[dict[str, Any]],
+        *,
+        label: str | None = None,
     ) -> None:
-        """Idempotent replacement: archive the previous agent section, then append.
-
-        Reruns and partial failures used to leave duplicate "Research — YYYY-MM-DD"
-        sections on the same page. Archiving (Notion's soft-delete) the prior block
-        IDs first guarantees one canonical agent section per page.
+        """Idempotent replacement: archive the previous agent section matching
+        `label`, then append. With label=None this matches unlabeled sections
+        only — labeled variants on the same page survive.
         """
-        old_block_ids = self.find_latest_agent_section(page_id, prefix=prefix)
+        old_block_ids = self.find_latest_agent_section(page_id, label=label)
         for block_id in old_block_ids:
             try:
                 with NOTION_LIMITER:
