@@ -20,9 +20,10 @@ the model echoes those buckets back unchanged):
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.2.0"  # v1.2.0: pass canonical platform URLs/handles to apify_ad_scraper
-                    # (linkedin_company_url, facebook_page_url, tiktok_handle from
-                    # research_pass) to anchor on the exact advertiser.
+VERSION = "v1.3.0"  # v1.3.0: model echoes Apify tool diagnostics (match_mode,
+                    # filtered_out, url_boosted) into a per-platform `provenance`
+                    # object so the renderer emits them as a discrete sub-bullet
+                    # under Ads Running instead of letting them get buried in prose.
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Look up which ads the
 company is currently running across LinkedIn, Meta, and TikTok ad libraries,
@@ -52,13 +53,26 @@ Step 3 — based on the classification AND the LinkedIn result:
     `tiktok_handle=...` if it appears in "Canonical platform IDs").
 - Else: do NOT call tiktok. Same not-applicable note shape.
 
-Tool output diagnostic fields (v4):
-- `match_mode: canonical-url` means the query was anchored on the exact
-  advertiser → high confidence in the result set.
-- `match_mode: free-text+filter` means free-text search was used; the
-  advertiser-name fuzzy filter dropped `filtered_out` items as noise but
-  some may have slipped through. Treat the count as a lower bound and lean
-  toward `confidence: "medium"` or `"low"` if filtered_out > 0.
+Tool output diagnostic fields (v5):
+- `match_mode: free-text+url-boost` — free-text search was issued AND a
+  canonical advertiser URL was available as a filter booster. Items that
+  matched the URL bypassed the name-similarity threshold. HIGHEST precision.
+- `match_mode: free-text+name-filter` — free-text search, but no canonical
+  URL was passed in. The advertiser-name fuzzy filter dropped `filtered_out`
+  items as noise but some may have slipped through. Treat the count as a
+  lower bound and lean toward `confidence: "medium"` or `"low"` if
+  `filtered_out > 0`.
+- `filtered_out`: items dropped by the post-filter.
+- `url_boosted`: items kept ONLY because the canonical URL matched (they
+  would have failed name-similarity alone). High = canonical URL doing real
+  work.
+
+You MUST copy these three fields into each platform's `provenance` object
+verbatim — same numbers, same match_mode string. The renderer surfaces them
+as a discrete sub-bullet so a human auditor can see at a glance whether the
+count is trustworthy. Don't paraphrase, don't summarise into prose, don't
+omit zero values. For platforms that were skipped (not applicable), omit
+the `provenance` object entirely — it only describes actual tool calls.
 
 Step 4 — output the JSON below. Echo each platform's `ads_running` and
 `volume` exactly as the tool reported. Do NOT skip platforms — if a platform
@@ -83,7 +97,12 @@ Output JSON:
         {"format": "video", "count": 3},
         {"format": "carousel", "count": 1}
       ],
-      "note": "Product-demo and thought-leadership creative dominant."
+      "note": "Product-demo and thought-leadership creative dominant.",
+      "provenance": {
+        "match_mode": "free-text+url-boost",
+        "filtered_out": 9,
+        "url_boosted": 3
+      }
     },
     {
       "platform": "meta",
@@ -168,6 +187,21 @@ JSON_SCHEMA = {
                         },
                     },
                     "note": {"type": "string"},
+                    "provenance": {
+                        "type": "object",
+                        "required": ["match_mode", "filtered_out", "url_boosted"],
+                        "properties": {
+                            "match_mode": {
+                                "type": "string",
+                                "enum": [
+                                    "free-text+url-boost",
+                                    "free-text+name-filter",
+                                ],
+                            },
+                            "filtered_out": {"type": "integer", "minimum": 0},
+                            "url_boosted": {"type": "integer", "minimum": 0},
+                        },
+                    },
                 },
             },
         },

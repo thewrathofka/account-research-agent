@@ -138,6 +138,30 @@ class Module10AdLibrary(Task):
             head = f"{name}: {count} ads ({volume} volume) — {fmt_summary}."
             if note:
                 head += f" {note}"
-            blocks.append(crm.bullet(head))
+
+            children = _provenance_children(p.get("provenance"))
+            blocks.append(crm.bullet(head, children=children or None))
 
         return blocks
+
+
+def _provenance_children(provenance: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Render the Apify diagnostic fields as a nested child bullet.
+
+    Echoes `match_mode` / `filtered_out` / `url_boosted` verbatim from the tool
+    output the model copied through. Returns [] when provenance is absent —
+    cached v1.2.0 outputs (pre-provenance) still render cleanly.
+    """
+    if not provenance:
+        return []
+    match_mode = provenance.get("match_mode")
+    if not match_mode:
+        return []
+    filtered_out = provenance.get("filtered_out", 0)
+    url_boosted = provenance.get("url_boosted", 0)
+    line = (
+        f"match_mode: {match_mode} · "
+        f"filtered_out: {filtered_out} · "
+        f"url_boosted: {url_boosted}"
+    )
+    return [crm.bullet(line)]

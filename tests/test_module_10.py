@@ -200,6 +200,126 @@ def test_task_to_blocks_emits_bullet_per_platform() -> None:
     assert texts[2].startswith("tiktok: no active ads")
 
 
+def test_schema_accepts_provenance_object() -> None:
+    """v1.3.0: per-platform provenance echoes Apify diagnostics."""
+    sample = {
+        "audience_classification": {
+            "primary": "B2B", "is_gen_z_lifestyle": False, "rationale": "...",
+        },
+        "platforms": [
+            {"platform": "linkedin", "ads_running": 15, "volume": "medium",
+             "format_mix": [{"format": "video", "count": 12},
+                            {"format": "static", "count": 3}],
+             "note": "Demo-heavy.",
+             "provenance": {
+                 "match_mode": "free-text+url-boost",
+                 "filtered_out": 9, "url_boosted": 3,
+             }},
+            {"platform": "meta", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "Not applicable — B2B."},
+            {"platform": "tiktok", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "Not applicable — not Gen-Z."},
+        ],
+        "citations": [], "sources": [], "confidence": "high",
+    }
+    jsonschema.validate(sample, prompt.JSON_SCHEMA)
+
+
+def test_schema_rejects_unknown_match_mode() -> None:
+    """v4 labels (canonical-url, free-text+filter) are gone — guard against drift."""
+    bad = {
+        "audience_classification": {
+            "primary": "B2B", "is_gen_z_lifestyle": False, "rationale": "...",
+        },
+        "platforms": [
+            {"platform": "linkedin", "ads_running": 1, "volume": "low",
+             "format_mix": [], "note": "...",
+             "provenance": {
+                 "match_mode": "canonical-url",  # v4 label, no longer valid
+                 "filtered_out": 0, "url_boosted": 0,
+             }},
+            {"platform": "meta", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "..."},
+            {"platform": "tiktok", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "..."},
+        ],
+        "citations": [], "sources": [], "confidence": "medium",
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, prompt.JSON_SCHEMA)
+
+
+def test_schema_still_accepts_platform_without_provenance() -> None:
+    """Cached pre-v1.3.0 outputs must still validate — provenance is optional."""
+    sample = {
+        "audience_classification": {
+            "primary": "B2B", "is_gen_z_lifestyle": False, "rationale": "...",
+        },
+        "platforms": [
+            {"platform": "linkedin", "ads_running": 5, "volume": "low",
+             "format_mix": [], "note": "..."},
+            {"platform": "meta", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "..."},
+            {"platform": "tiktok", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "..."},
+        ],
+        "citations": [], "sources": [], "confidence": "medium",
+    }
+    jsonschema.validate(sample, prompt.JSON_SCHEMA)
+
+
+def test_to_blocks_emits_provenance_as_nested_child() -> None:
+    task = Module10AdLibrary()
+    out = {
+        "platforms": [
+            {"platform": "linkedin", "ads_running": 15, "volume": "medium",
+             "format_mix": [{"format": "video", "count": 12}],
+             "note": "Demo-heavy.",
+             "provenance": {
+                 "match_mode": "free-text+url-boost",
+                 "filtered_out": 9, "url_boosted": 3,
+             }},
+        ],
+    }
+    blocks = task.to_blocks(out)
+    assert len(blocks) == 1
+    item = blocks[0]["bulleted_list_item"]
+    children = item.get("children") or []
+    assert len(children) == 1, "provenance must render as one nested child bullet"
+    child_text = children[0]["bulleted_list_item"]["rich_text"][0]["text"]["content"]
+    assert "match_mode: free-text+url-boost" in child_text
+    assert "filtered_out: 9" in child_text
+    assert "url_boosted: 3" in child_text
+
+
+def test_to_blocks_omits_provenance_when_absent() -> None:
+    """Cached pre-v1.3.0 platform output renders without a provenance child."""
+    task = Module10AdLibrary()
+    out = {
+        "platforms": [
+            {"platform": "linkedin", "ads_running": 5, "volume": "low",
+             "format_mix": [{"format": "static", "count": 5}], "note": "..."},
+        ],
+    }
+    blocks = task.to_blocks(out)
+    assert len(blocks) == 1
+    assert "children" not in blocks[0]["bulleted_list_item"]
+
+
+def test_to_blocks_omits_provenance_for_skipped_platforms() -> None:
+    """`not applicable` platforms shouldn't get a provenance child even if one is present."""
+    task = Module10AdLibrary()
+    out = {
+        "platforms": [
+            {"platform": "meta", "ads_running": 0, "volume": "none",
+             "format_mix": [], "note": "Not applicable — B2B."},
+        ],
+    }
+    blocks = task.to_blocks(out)
+    assert len(blocks) == 1
+    assert "children" not in blocks[0]["bulleted_list_item"]
+
+
 def test_task_section_targets_creative_posture_ads_running() -> None:
     """Page-body assembly relies on these exact strings — guard them with a test."""
     task = Module10AdLibrary()

@@ -324,10 +324,15 @@ def paragraph(text: str) -> dict[str, Any]:
     }
 
 
-def bullet(text: str) -> dict[str, Any]:
+def bullet(text: str, children: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "rich_text": [{"type": "text", "text": {"content": text}}],
+    }
+    if children:
+        body["children"] = children
     return {
         "object": "block", "type": "bulleted_list_item",
-        "bulleted_list_item": {"rich_text": [{"type": "text", "text": {"content": text}}]},
+        "bulleted_list_item": body,
     }
 
 
