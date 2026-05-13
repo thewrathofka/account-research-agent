@@ -275,6 +275,36 @@ def test_writeback_drops_unknown_signal_types():
     assert len(crm.comments) == 1
 
 
+def test_writeback_continues_when_comment_fails():
+    """The comment is supplementary — a 403 on the integration's `Insert
+    comments` capability must not abort the run. Needs Attention property +
+    completion props must still land."""
+    class _NoCommentCRM(_FakeCRMWithAck):
+        def create_comment(self, page_id, body):
+            raise RuntimeError("403 Forbidden: Insufficient permissions")
+
+    crm = _NoCommentCRM()
+    account = Account(page_id="p1", name="Acme", rep="Katarina",
+                      priority_type="Priority A", last_researched=None)
+    events = [
+        DetectedEvent(account_page_id="p1", module="module_06_structural_news",
+                      signal_type="bankruptcy", summary="Chapter 7", signature="s1"),
+    ]
+    wrote = write_account_outcome(
+        crm, account, [_result()],
+        overall_status="done", overall_confidence="high",
+        research_blocks=None, label=None, detected_events=events,
+    )
+    assert wrote is True, "writeback should succeed even when comment 403s"
+    # Pre-body props (incl. Needs Attention) landed.
+    pre_props = crm.property_writes[0][1]
+    assert crm_module.PROP_NEEDS_ATTENTION in pre_props
+    # Completion props (Last Researched / Status / Confidence) landed too —
+    # the comment failure didn't short-circuit the rest.
+    completion_props = crm.property_writes[-1][1]
+    assert crm_module.PROP_RESEARCH_STATUS in completion_props
+
+
 def test_build_alert_comment_includes_ack_instruction():
     events = [
         DetectedEvent(account_page_id="p1", module="m", signal_type="bankruptcy",

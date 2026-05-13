@@ -233,8 +233,22 @@ def write_account_outcome(
 
     # Phase C: one descriptive comment per run summarizing all events.
     # Per-event comments would be noisy in a shared workspace.
+    #
+    # Best-effort: the comment is supplementary signal (the human-readable
+    # detail behind the Needs Attention multi_select that already landed in
+    # pre-body props). A 403 here (e.g. integration missing "Insert
+    # comments" capability) must NOT abort the completion props write or
+    # fail the whole run — the primary alert surface is the property, not
+    # the comment. Log and continue.
     if events:
-        crm.create_comment(account.page_id, _build_alert_comment(events))
+        try:
+            crm.create_comment(account.page_id, _build_alert_comment(events))
+        except Exception as e:
+            log.warning(
+                "Comment delivery failed for %s (events=%d): %s — "
+                "Needs Attention property already landed, run continues.",
+                account.page_id, len(events), e,
+            )
 
     completion_props = build_completion_payload(
         overall_confidence, overall_status,
