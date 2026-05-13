@@ -182,8 +182,14 @@ class Orchestrator:
                 detected_events=detected_events,
             )
 
+        # Phase C: dedup detected events through the event_alerts ledger.
+        # Skip an event when its signature was already alerted within 14d
+        # AND the human hasn't acknowledged since. Record each fired event.
+        fired_events = self._filter_and_record_events(account, detected_events)
+
         try:
-            self._write_to_notion(account, results, overall_conf, overall_status)
+            self._write_to_notion(account, results, overall_conf, overall_status,
+                                  detected_events=fired_events)
         except Exception as e:
             log.exception("[%s] Notion write failed", account.name)
             return AccountOutcome(
@@ -195,8 +201,45 @@ class Orchestrator:
         return AccountOutcome(
             account=account, task_results=results, overall_confidence=overall_conf,
             overall_status=overall_status, wrote_to_notion=True,
-            detected_events=detected_events,
+            detected_events=fired_events,
         )
+
+    def _filter_and_record_events(
+        self,
+        account: Account,
+        events: list[DetectedEvent],
+    ) -> list[DetectedEvent]:
+        """Phase C dedup: drop events whose signature was alerted within the
+        cooldown window AND not acknowledged since by the human. Record each
+        fired event in the event_alerts ledger so the next run can see it.
+
+        Acknowledgement contract: when the human sets `Attention Acknowledged
+        At` on the Notion page to a date AFTER the most recent alert, the
+        cooldown is cleared and the same signature can fire again.
+        """
+        if not events:
+            return []
+        try:
+            ack = self.crm.get_attention_acknowledged_at(account.page_id)
+        except Exception:
+            ack = None
+        fired: list[DetectedEvent] = []
+        for e in events:
+            last = self.run_log.recent_alert(
+                account.page_id, e.signature, within_days=14,
+            )
+            if last and (not ack or ack < last[:10]):
+                log.info(
+                    "[%s] alert dedup: skipping %s/%s (last alert %s, ack %s)",
+                    account.name, e.module, e.signal_type, last, ack,
+                )
+                continue
+            self.run_log.record_alert(
+                account.page_id, e.signature,
+                module=e.module, signal_type=e.signal_type, summary=e.summary,
+            )
+            fired.append(e)
+        return fired
 
     def _collect_detected_events(
         self,
@@ -408,6 +451,7 @@ class Orchestrator:
         results: list[TaskResult],
         overall_conf: str,
         overall_status: str,
+        detected_events: list[DetectedEvent] | None = None,
     ) -> None:
         """Delegate to writeback.write_account_outcome — single source of truth
         for property merging, idempotent block append, and write ordering."""
@@ -420,6 +464,7 @@ class Orchestrator:
             dry_run=False,
             label=self.label,
             writes_last_researched=self.writes_last_researched,
+            detected_events=detected_events,
         )
 
 

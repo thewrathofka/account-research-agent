@@ -32,7 +32,7 @@ from typing import Any, Callable
 
 import crm as crm_module
 from crm import Account, NotionCRM
-from tasks.base import TaskResult
+from tasks.base import DetectedEvent, TaskResult
 
 
 log = logging.getLogger(__name__)
@@ -110,6 +110,10 @@ MERGE_STRATEGIES: dict[str, MergeFn] = {
     crm_module.PROP_BUYING_SIGNALS: merge_multi_select,
     crm_module.PROP_BUYING_INTENT: merge_multi_select,
     crm_module.PROP_PAIN_POINT_TAGS: merge_multi_select,
+    # Phase C: PROP_NEEDS_ATTENTION is CO-OWNED — agent appends tags when a
+    # diff fires; human clears tags + sets Attention Acknowledged At. Agent
+    # never clears. Hence merge_multi_select (union), not replace_value.
+    crm_module.PROP_NEEDS_ATTENTION: merge_multi_select,
     crm_module.PROP_STRUCTURE_NOTES: merge_rich_text_append,
     crm_module.PROP_RESEARCH_STATUS: merge_status_priority,
 }
@@ -182,6 +186,7 @@ def write_account_outcome(
     dry_run: bool = False,
     label: str | None = None,
     writes_last_researched: bool = True,
+    detected_events: list[DetectedEvent] | None = None,
 ) -> bool:
     """Atomic-ish writeback for one account.
 
@@ -202,6 +207,22 @@ def write_account_outcome(
         return False
 
     pre_body_props = build_property_payload(results)
+
+    # Phase C: fold any detected events into the property payload as
+    # PROP_NEEDS_ATTENTION tags, and fold a comment-on-run delivery into the
+    # writeback sequence. Pre-body order so a body failure doesn't leave
+    # stale Needs Attention tags on the page without the comment context.
+    events = detected_events or []
+    if events:
+        signals = sorted({e.signal_type for e in events
+                          if e.signal_type in crm_module.NEEDS_ATTENTION_OPTIONS})
+        if signals:
+            pre_body_props[crm_module.PROP_NEEDS_ATTENTION] = merge_property(
+                pre_body_props.get(crm_module.PROP_NEEDS_ATTENTION),
+                {"multi_select": [{"name": s} for s in signals]},
+                crm_module.PROP_NEEDS_ATTENTION,
+            )
+
     if pre_body_props:
         crm.update_properties(account.page_id, pre_body_props)
 
@@ -210,12 +231,35 @@ def write_account_outcome(
             account.page_id, research_blocks, label=label,
         )
 
+    # Phase C: one descriptive comment per run summarizing all events.
+    # Per-event comments would be noisy in a shared workspace.
+    if events:
+        crm.create_comment(account.page_id, _build_alert_comment(events))
+
     completion_props = build_completion_payload(
         overall_confidence, overall_status,
         writes_last_researched=writes_last_researched,
     )
     crm.update_properties(account.page_id, completion_props)
     return True
+
+
+def _build_alert_comment(events: list[DetectedEvent]) -> str:
+    """Compose the single-comment summary the agent posts when any
+    DetectedEvent fired. Format is plain text so it renders cleanly in
+    Notion's comment UI."""
+    today = date.today().isoformat()
+    lines = [f"Account research agent ({today}) — events detected:"]
+    for e in events:
+        line = f"• [{e.signal_type}] {e.summary}"
+        if e.source_url:
+            line += f" — {e.source_url}"
+        lines.append(line)
+    lines.append(
+        "Clear the `Needs Attention` tags and set `Attention Acknowledged At` "
+        "to today once you've reviewed."
+    )
+    return "\n".join(lines)
 
 
 def write_gate_failure_to_notion(

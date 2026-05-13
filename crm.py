@@ -36,6 +36,15 @@ PROP_LAST_RESEARCHED = "Last Researched"
 PROP_RESEARCH_CONFIDENCE = "Research Confidence"
 PROP_RESEARCH_STATUS = "Research Status"
 
+# Phase C (2026-05-13) — Notion-native alerting.
+# `Needs Attention` is co-owned: the agent appends tags when a per-task diff
+# detects an alert-worthy transition; the human clears tags + sets
+# `Attention Acknowledged At` once they've reviewed the alert. The agent
+# reads the acknowledged date to suppress re-alerting until the human acts
+# on the latest signature.
+PROP_NEEDS_ATTENTION = "Needs Attention"
+PROP_ATTENTION_ACKNOWLEDGED_AT = "Attention Acknowledged At"
+
 # ---- Option vocabularies ----
 # 2026-05-11 role swap: `Buying Signals` is now the agent-only multi_select,
 # `Buying Intent` is human-managed (BDR-curated tags). The agent never writes
@@ -62,6 +71,12 @@ PAIN_POINT_TAG_OPTIONS = {
 LEAD_SIGNAL_OPTIONS = {"TOFU", "MQL", "call request", "new hire"}
 RESEARCH_STATUS_OPTIONS = {"pending", "done", "needs_review", "failed", "out_of_scope"}
 RESEARCH_CONFIDENCE_OPTIONS = {"high", "medium", "low", "failed"}
+# Phase C: tags the agent writes to PROP_NEEDS_ATTENTION. Matches the
+# DetectedEvent.signal_type values produced by per-task detect_events.
+NEEDS_ATTENTION_OPTIONS = {
+    "bankruptcy", "layoffs", "M&A", "funding",
+    "agency-switch", "senior-hire", "structure-ambiguous",
+}
 
 REP_KATARINA = "Katarina"
 PRIORITY_A = "Priority A"
@@ -85,6 +100,8 @@ EXPECTED_NOTION_PROPERTIES: dict[str, str] = {
     PROP_BUYING_INTENT: "multi_select",
     PROP_PAIN_POINT_TAGS: "multi_select",
     PROP_STRUCTURE_NOTES: "rich_text",
+    PROP_NEEDS_ATTENTION: "multi_select",
+    PROP_ATTENTION_ACKNOWLEDGED_AT: "date",
 }
 
 
@@ -201,6 +218,30 @@ class NotionCRM:
                 self.client.blocks.children.append(
                     block_id=page_id, children=blocks_list[i:i + 100]
                 )
+
+    def create_comment(self, page_id: str, body: str) -> None:
+        """Drop a comment on the page. Phase C uses this for one summary
+        comment per run when DetectedEvents fire — the comment carries the
+        durable record of what triggered the Needs Attention flag.
+
+        Per-event comments would be noisy in a shared workspace; one summary
+        comment per run is quieter while still leaving an audit trail."""
+        with NOTION_LIMITER:
+            self.client.comments.create(
+                parent={"page_id": page_id},
+                rich_text=[{"type": "text", "text": {"content": body}}],
+            )
+
+    def get_attention_acknowledged_at(self, page_id: str) -> str | None:
+        """Read the human-set `Attention Acknowledged At` date so Phase C's
+        alert dedup can suppress re-alerting for events whose signature was
+        already flagged before the human acknowledged. Returns ISO date or
+        None when the property is empty / not set."""
+        with NOTION_LIMITER:
+            page = self.client.pages.retrieve(page_id=page_id)
+        prop = (page.get("properties") or {}).get(PROP_ATTENTION_ACKNOWLEDGED_AT, {})
+        date_val = (prop.get("date") or {}).get("start")
+        return date_val
 
     # ---- Idempotent agent section management (Fix Appendix #2) ----
 

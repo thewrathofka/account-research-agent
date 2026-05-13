@@ -76,6 +76,23 @@ CREATE TABLE IF NOT EXISTS ats_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_ats_snapshots_lookup
     ON ats_snapshots(company_name, provider, snapshot_at DESC);
+
+-- Phase C (2026-05-13): dedup ledger for Notion alerts. The orchestrator
+-- writes one row per fired DetectedEvent so subsequent runs within the
+-- cooldown window (default 14 days) can suppress re-alerting for the same
+-- (account, signature). Cleared implicitly when the human sets
+-- `Attention Acknowledged At` on the Notion page — see crm.get_attention_acknowledged_at.
+CREATE TABLE IF NOT EXISTS event_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_page_id TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    alerted_at TEXT NOT NULL,
+    module TEXT,
+    signal_type TEXT,
+    summary TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_event_alerts_lookup
+    ON event_alerts(account_page_id, signature, alerted_at DESC);
 """
 
 # Columns added in Phase 1 — old DBs need ALTER TABLE migration.
@@ -224,6 +241,51 @@ class RunLog:
             }
             for (pid, task, started_at, output_json, prompt_version, confidence) in rows
         }
+
+    # ---- Phase C: alert dedup ledger ----
+
+    def recent_alert(
+        self,
+        page_id: str,
+        signature: str,
+        *,
+        within_days: int = 14,
+    ) -> str | None:
+        """Return the most recent alert timestamp for (page_id, signature)
+        within the cooldown window, or None if no recent alert exists.
+
+        Used by the orchestrator before passing DetectedEvents to writeback —
+        if we alerted on the same signature within 14d AND the human hasn't
+        acknowledged since, skip the re-alert."""
+        from datetime import datetime as _dt, timedelta, timezone as _tz
+        cutoff = (_dt.now(_tz.utc) - timedelta(days=within_days)).isoformat()
+        with self._conn() as c:
+            row = c.execute(
+                """SELECT MAX(alerted_at) FROM event_alerts
+                   WHERE account_page_id = ? AND signature = ? AND alerted_at >= ?""",
+                (page_id, signature, cutoff),
+            ).fetchone()
+        return row[0] if row and row[0] else None
+
+    def record_alert(
+        self,
+        page_id: str,
+        signature: str,
+        *,
+        module: str | None = None,
+        signal_type: str | None = None,
+        summary: str | None = None,
+    ) -> None:
+        """Append a row to the event_alerts ledger. Phase C calls this when
+        the orchestrator hands an event to writeback (i.e. AFTER dedup, so
+        every recorded row represents a real Notion-side action)."""
+        with self._conn() as c:
+            c.execute(
+                """INSERT INTO event_alerts
+                   (account_page_id, signature, alerted_at, module, signal_type, summary)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (page_id, signature, iso_now(), module, signal_type, summary),
+            )
 
     def summary(self) -> dict[str, Any]:
         with self._conn() as c:
