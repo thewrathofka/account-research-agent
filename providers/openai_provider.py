@@ -69,7 +69,7 @@ class OpenAIProvider(LLMProvider):
                 with OPENAI_LIMITER:
                     response = self.client.chat.completions.create(
                         model=model,
-                        max_tokens=config.MAX_TOKENS,
+                        max_completion_tokens=config.MAX_TOKENS,
                         messages=messages,
                         tools=tool_specs,
                     )
@@ -170,7 +170,7 @@ class OpenAIProvider(LLMProvider):
                     {"role": "system", "content": r.system_prompt},
                     {"role": "user", "content": r.user_message},
                 ],
-                "max_tokens": r.max_tokens or config.MAX_TOKENS,
+                "max_completion_tokens": r.max_tokens or config.MAX_TOKENS,
             }
             lines.append(_json.dumps({
                 "custom_id": r.custom_id,
