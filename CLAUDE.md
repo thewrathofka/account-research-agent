@@ -218,9 +218,9 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 
 ### 5. Corporate structure
 - Standalone vs subsidiary vs parent. PE ownership if any.
-- **Output:** Notion `Parent-Child` (text — sister/child companies if relevant)
-  + `Name of Parent` (text — parent name; if standalone, leave empty; if itself
-  the parent, write its own name).
+- **Output:** Notion `sister/child` (text — sister/child companies if relevant)
+  + `Parent` (text — parent name; if standalone with no children, leave empty;
+  if itself a parent or owns notable child brands, write its own name).
 - Tool: Tavily.
 
 ### 6. Structural news (last 6 months)
@@ -300,7 +300,7 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 | `Lead Signal` | multi-select | (not used by agent) | manual |
 | `New Hire` | url | (not used by agent — module removed) | manual |
 | `Company Structure` | text | (manual / future use) | manual |
-| `Parent-Child` | text | module 5 (sister / child brands) | agent |
+| `sister/child` | text (renamed from `Parent-Child` 2026-05-12) | module 5 (sister / child brands) | agent |
 | `Parent` | text (renamed from `Name of Parent`) | module 5 (parent name / self if standalone-parent / empty) | agent |
 | `Structure Notes` | text | module 6 | agent |
 | `Last Researched` | date | agent metadata | agent |
@@ -338,6 +338,38 @@ agent does not write them.)
 - **`Name of Parent` → `Parent` rename.** Same field, shorter name.
 - **`Pain Point Tags` populated.** Was a placeholder with `TBD - populate`;
   now has the 10-tag vocabulary above as selectable options.
+
+### 2026-05-12 follow-up migrations
+
+- **`Parent-Child` → `sister/child` rename.** Same field, more accurate
+  name (the property stores sister/child brand names, not the parent).
+  Code constant `PROP_PARENT_CHILD` → `PROP_SISTER_CHILD`.
+- **Module 5 Parent self-name bug fix.** The model frequently classifies a
+  parent-with-one-child company as `structure_type=standalone` (e.g.
+  AlphaSense after acquiring Tegus). `to_fields()` now treats any non-empty
+  `notable_sister_or_child_brands` as evidence that the company is a parent
+  and writes its own name to `Parent`. Prompt v1.3.0 also tightens the
+  classification rule so child brands force `structure_type="parent"`.
+- **Module 6 placeholder-name fix.** Prompt v1.4.0 hardens the rule that
+  `merged with X` / `acquired Y` placeholders must be substituted with
+  actual company names from the research, or set `structure_note=null`.
+  Also clarifies when to use `out of business` (full sunset after
+  acquisition / Chapter 7 / cease-of-operations).
+- **Module 13 90d window + Superside-relevance filter.** Prompt v1.4.0
+  expands the recency window from 60d to 90d and tightens the relevance
+  filter: a story qualifies only if it would plausibly affect creative/
+  marketing strategy or wider category buying willingness — not generic
+  industry news.
+- **Module 4 v3.0.0 — bullet layout.** Replaces the v2.x narrative-paragraph
+  output with `intro` (one-line frame) + `pain_points[]` (one bullet per
+  named pain) + tag bullet. Same analytical depth, scannable in 10 seconds.
+  Schema: `{intro, pain_points:[{label, body}], tags, citations, sources}`.
+  Backwards-compat path: cached v2.x outputs (with `narrative` field) still
+  render as paragraph blocks.
+- **Citation system simplified.** Orchestrator no longer emits the per-section
+  "Sources:" footnote bullet list OR the global page-bottom "Sources"
+  heading_3. The inline `[N]` clickable links carry all the source info —
+  the footnote duplication was visual noise.
 - All schema changes were performed live via Notion MCP `ALTER COLUMN`.
   Code's `EXPECTED_NOTION_PROPERTIES` constant (`crm.py`) is the contract;
   the agent's `validate_schema()` call at startup halts the run if the
@@ -471,11 +503,49 @@ Personal version lives at `~/.claude/commands/research-account.md`.
 
 ---
 
+## Cost tracking (2026-05-12)
+
+Every batch prints a cost block at the end:
+
+```
+--- Cost (this batch) ---
+  Total: $0.0682 (LLM $0.0442 + Tavily $0.0240) across 1 account(s), 1 task-run(s)
+  Per account avg: $0.0682  (input: 10,734  output: 800  cached-input: 0  searches: 3)
+  Apify (LinkedIn/Meta/TikTok ad scrapers) not included — check dashboard.apify.com.
+  Forecast at this per-account rate: 50 accts ~$3.41, 213 ~$14.53, 1255 ~$85.59
+```
+
+Add `--cost-summary` for verbose per-account / per-task / per-model breakdown
+tables. The batch total is filtered to rows started AFTER batch_started_at,
+so it isolates this run from lifetime totals.
+
+For post-hoc analysis, use `cost_report.py`:
+
+```
+python cost_report.py                          # everything in runs.db
+python cost_report.py --since 7d               # last 7 days (rel offset)
+python cost_report.py --since 2026-05-01       # since ISO date
+python cost_report.py --account Oracle         # one account
+python cost_report.py --git-sha c6b91ba        # one build
+python cost_report.py --top 20                 # top N per breakdown
+python cost_report.py --json                   # machine-readable
+```
+
+Pricing tables live in `config.MODEL_PRICING_PER_M_TOKENS` (Anthropic +
+OpenAI + Gemini per-model rates) and `config.TAVILY_COST_PER_SEARCH` (flat
+$0.008). Unknown models return $0 — the report flags this case so a stale
+runs.db with retired model names doesn't silently under-report.
+
+**Apify is NOT in the report** — it doesn't pass through runs.db. Check
+dashboard.apify.com for LinkedIn/Meta/TikTok scraper spend.
+
 ## Pointers
 
 - **Run dry:** `python account_research_agent.py --limit 1 --dry-run`
 - **Run live:** `python account_research_agent.py --limit 1`
 - **Run batch (skip recently researched):** `python account_research_agent.py --since 30`
+- **Verbose cost breakdown:** `python account_research_agent.py --cost-summary`
+- **Post-hoc cost report:** `python cost_report.py --since 7d`
 - **Inspect last run output:**
   `python -c "import sqlite3,json; c=sqlite3.connect('runs.db'); r=c.execute('select output_json from task_runs order by id desc limit 1').fetchone(); print(json.dumps(json.loads(r[0]), indent=2))"`
 - **Notion All Accounts DB ID:** `6d510b5a-9c8f-490f-8600-429184341edc`

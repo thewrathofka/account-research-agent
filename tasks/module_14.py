@@ -43,9 +43,13 @@ class Module14HiringSignal(Task):
 
     def build_user_message(self, account_name: str, context: dict[str, Any]) -> str:
         """Inject gate output so the model skips redundant searches AND uses
-        region-aware hiring queries (Fix Appendix #12)."""
+        region-aware hiring queries (Fix Appendix #12). Also surface the
+        greenhouse_slug captured by research_pass so the model passes it
+        authoritatively to ats_jobs instead of relying on name-derived
+        heuristics that miss for companies whose slug ≠ brand name."""
         gate = context.get("module_01_gate") or {}
         news = context.get("module_06_structural_news") or {}
+        rp = context.get("research_pass") or {}
         prior: list[str] = []
 
         emp = gate.get("employee_count_estimate")
@@ -65,16 +69,34 @@ class Module14HiringSignal(Task):
             prior.append(f"recent layoff event already detected: {news.get('event_summary','')}")
 
         prior_block = ("Prior research established: " + "; ".join(prior) + ". ") if prior else ""
+
+        # Authoritative Greenhouse slug captured by research_pass. When
+        # present, the model MUST pass it through verbatim (don't guess /
+        # don't second-guess). When missing, the tool falls back to name-
+        # derived heuristics — which is what was happening today.
+        gh_slug = rp.get("greenhouse_slug")
+        if gh_slug:
+            ats_instruction = (
+                f"Then call ats_jobs(provider='greenhouse', ats_slug={gh_slug!r}) "
+                "— this slug was confirmed by upstream research, pass it "
+                "verbatim. "
+            )
+        else:
+            ats_instruction = (
+                "Then call ats_jobs (provider='greenhouse') — look at the "
+                "company's careers page to find the Greenhouse slug if you "
+                "can; pass it as `ats_slug=<slug>`. If you can't find a slug, "
+                "call ats_jobs without one and the tool will try heuristics "
+                "from the company name. "
+            )
+
         return (
             f"{_today_header()}\n\n"
             f"Research the company: {account_name}.\n"
             f"{prior_block}"
             f"When you call hiring_signals, pass countries={regions} to scrape "
             f"each market the company operates in ({regions_str}). "
-            f"Then call ats_jobs (provider='greenhouse') — look at the company's "
-            f"careers page to find the Greenhouse slug if you can; pass it as "
-            f"`ats_slug=<slug>`. If you can't find a slug, call ats_jobs without "
-            f"one and the tool will try heuristics from the company name. "
+            f"{ats_instruction}"
             f"ATS data typically returns 3-5× more roles than hiring_signals "
             f"for B2B SaaS and includes important-role open/close diffing. "
             f"Only call web_search for layoff news if the layoff context isn't "
