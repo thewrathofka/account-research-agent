@@ -1,0 +1,52 @@
+name: Monthly full pipeline
+
+# Phase D — monthly cadence. Runs the FULL PHASE2 pipeline on every account
+# in scope — no --module-since gating, so every module refreshes even if a
+# daily/weekly poll touched it recently. This is the only job that writes
+# the `Last Researched` Notion property (auto-derived from PHASE2_TASKS in
+# account_research_agent.py:main).
+#
+# Cost: ~$0.30/account × 213 ≈ $65/month projected.
+
+on:
+  schedule:
+    # 1st of every month at 07:00 Europe/Belgrade (~05:00 UTC winter, 06:00
+    # UTC summer). Staggered +1h after the weekly's Monday slot to avoid any
+    # overlap when the 1st lands on a Monday.
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+
+jobs:
+  monthly-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run full pipeline (Priority A)
+        run: |
+          python account_research_agent.py \
+            --priority "Priority A" \
+            --cost-summary
+      - name: Run full pipeline (Priority B)
+        run: |
+          python account_research_agent.py \
+            --priority "Priority B" \
+            --cost-summary
+      - name: Upload runs.db artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monthly-full-runs-${{ github.run_id }}
+          path: runs.db
+          retention-days: 90

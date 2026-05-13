@@ -1,0 +1,50 @@
+name: Quarterly deep refresh
+
+# Phase D — quarterly cadence. Forces a fresh run of the slow-moving modules
+# (corporate structure, competitor snapshot, revenue model) regardless of
+# whether the monthly full pipeline already touched them. Useful when the
+# competitive landscape or ownership of an account hasn't changed for a
+# year but the agent's cached output is stale enough that a manual review
+# is warranted.
+#
+# Runs the same full pipeline as monthly-full but explicitly named so the
+# audit trail is clear when reviewing quarter-end reports.
+
+on:
+  schedule:
+    # 1st of Jan / Apr / Jul / Oct at 08:00 Europe/Belgrade.
+    - cron: '0 7 1 1,4,7,10 *'
+  workflow_dispatch:
+
+jobs:
+  quarterly-deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run quarterly deep (all priorities)
+        run: |
+          python account_research_agent.py \
+            --priority "Priority A" \
+            --cost-summary
+          python account_research_agent.py \
+            --priority "Priority B" \
+            --cost-summary
+      - name: Upload runs.db artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quarterly-deep-runs-${{ github.run_id }}
+          path: runs.db
+          retention-days: 365

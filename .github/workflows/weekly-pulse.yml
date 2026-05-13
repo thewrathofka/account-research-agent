@@ -1,0 +1,56 @@
+name: Weekly pulse (Priority A+B)
+
+# Phase D — weekly cadence. Full ATS snapshot diff (Module 14) + industry
+# pulse (Module 13) on Priority A + Priority B accounts (~148 accounts).
+# ~$30-50/week projected. Catches role openings/closures slower than daily
+# would but covers the wider pipeline.
+#
+# This job does NOT update Last Researched.
+
+on:
+  schedule:
+    # Monday 07:00 Europe/Belgrade (UTC+1 winter / UTC+2 summer).
+    # Cron in UTC; tolerate the 1h DST drift — Monday morning runs land
+    # before Kali starts her day regardless. Staggered +30min after the
+    # daily job to avoid Notion rate-limit contention.
+    - cron: '30 6 * * MON'
+  workflow_dispatch:
+
+jobs:
+  weekly-pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run weekly pulse (Priority A)
+        run: |
+          python account_research_agent.py \
+            --priority "Priority A" \
+            --tasks module_01_gate,research_pass,module_13_industry_pulse,module_14_hiring_signal \
+            --module-since "module_13_industry_pulse:7,module_14_hiring_signal:7" \
+            --cost-summary
+      - name: Run weekly pulse (Priority B)
+        run: |
+          python account_research_agent.py \
+            --priority "Priority B" \
+            --tasks module_01_gate,research_pass,module_13_industry_pulse,module_14_hiring_signal \
+            --module-since "module_13_industry_pulse:7,module_14_hiring_signal:7" \
+            --cost-summary
+      - name: Upload runs.db artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-pulse-runs-${{ github.run_id }}
+          path: runs.db
+          retention-days: 30

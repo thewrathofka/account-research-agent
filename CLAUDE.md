@@ -461,15 +461,56 @@ Shipped. Live-verified on Kali's 8 Priority-A accounts on 2026-05-09.
 
 All three shipped 2026-05-11.
 
+### ✅ Phase 2.5 — Tiered cadences + Notion-native alerting (2026-05-13)
+- **Phase A**: per-module freshness gating via `--module-since` CLI flag.
+  Each task can be skipped on a per-account basis when its last successful
+  output is within a caller-supplied threshold. Skipped tasks replay their
+  cached `output_json` into the context envelope + re-render the page-body
+  blocks (no body wipe on daily runs).
+- **Phase B**: per-task `detect_events(prev, curr)` hook on Task base. Each
+  module owns its own diff rule (Module 06 structure_note severity +
+  buying_implication transitions; Module 07 trigger_details URL/summary
+  diff; Module 14 important_roles_recently_closed + new Tier-1 opens;
+  Module 05 structure_type change; Module 04 timing-shift pain tags).
+- **Phase C**: Notion-native alerting. New `Needs Attention` multi_select
+  (agent appends, human clears) + new `Attention Acknowledged At` date
+  (human-set, clears the 14-day dedup cooldown). One descriptive comment
+  per run summarising all events. `event_alerts` SQLite ledger does the
+  signature-based dedup.
+- **Phase D**: GHA workflows at `.github/workflows/` — daily-news,
+  weekly-pulse, monthly-full, quarterly-deep. Staggered cron times in
+  Kali's local timezone. Only monthly-full writes `Last Researched`.
+
 ### Phase 3 — Hardening for team handoff (pending)
 - Cost ceilings per account (`--max-cost`).
 - Resume on partial failure (per-task, not just per-account).
 - Real Gemini provider (currently a stub).
-- Monthly scheduled run (cron or `/schedule` skill).
+- ~~Monthly scheduled run (cron or `/schedule` skill).~~ Shipped 2026-05-13
+  as Phase 2.5/D — see `.github/workflows/*.yml`.
 - Lever / Ashby / Workday ATS providers (Greenhouse-only today).
 - Optional: enrich `research_pass` with a "strategic positioning + growth
   direction" section if module 4 narratives feel thin on smaller-profile
   accounts (deferred — re-evaluate after the next live batch).
+
+### Scheduler setup (Track 1 — GHA)
+
+GHA secrets to configure when handing off:
+- `ANTHROPIC_API_KEY` — primary LLM provider
+- `OPENAI_API_KEY` — for `--provider openai` (cross-provider eval today;
+  optional for production)
+- `NOTION_API_KEY` — Notion CRM writes
+- `TAVILY_API_KEY` — news + general web search
+- `APIFY_TOKEN` — LinkedIn/Meta/TikTok ad library scrapers
+
+Cron schedule (UTC, staggered to avoid Notion rate-limit overlap):
+- `daily-news.yml`         — `0 5 * * *`         (~06:00 Belgrade)
+- `weekly-pulse.yml`       — `30 6 * * MON`      (~07:30 Belgrade, Mon)
+- `monthly-full.yml`       — `0 6 1 * *`         (~07:00 Belgrade, 1st)
+- `quarterly-deep.yml`     — `0 7 1 1,4,7,10 *`  (~08:00 Belgrade, Q-start)
+
+Track 2 (personal Claude Max version) can run these locally via the
+`/schedule` skill — same task lists, same `--module-since` flags, same
+ack-clears-cooldown semantics.
 
 ---
 

@@ -1,0 +1,50 @@
+name: Daily news (Priority A)
+
+# Phase D — daily cadence. Polls modules 06/07/14 on Priority A accounts only
+# (~10-15 accounts, ~$0.13/account/day projected = ~$20-40/month). News and
+# trigger events have the shortest sales-relevance window — daily catches
+# bankruptcy / layoffs / funding / agency-switch / Tier-1 senior hire within
+# ~24h of breaking publicly.
+#
+# IMPORTANT: this job does NOT update the `Last Researched` Notion property.
+# That property keeps "full pipeline ran" semantics — only monthly-full writes it.
+
+on:
+  schedule:
+    # 06:00 Europe/Belgrade. UTC+1 (CET, Oct–Mar) → 05:00 UTC.
+    # During DST (UTC+2, late Mar–late Oct) this fires at 07:00 local — fine
+    # for a daily news poll; tighten only if start-of-day skew matters.
+    - cron: '0 5 * * *'
+  workflow_dispatch:  # allow manual `gh workflow run` for ad-hoc runs
+
+jobs:
+  daily-news:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run daily news poll
+        run: |
+          python account_research_agent.py \
+            --priority "Priority A" \
+            --tasks module_01_gate,research_pass,module_06_structural_news,module_07_trigger_events,module_14_hiring_signal \
+            --module-since "module_06_structural_news:1,module_07_trigger_events:1,module_14_hiring_signal:1" \
+            --cost-summary
+      - name: Upload runs.db artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-news-runs-${{ github.run_id }}
+          path: runs.db
+          retention-days: 14
