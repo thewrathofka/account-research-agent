@@ -7,7 +7,7 @@ from typing import Any
 
 import crm
 import prompts.module_05_corporate_structure as prompt
-from tasks.base import Task
+from tasks.base import DetectedEvent, Task
 
 
 class Module05CorporateStructure(Task):
@@ -68,6 +68,45 @@ class Module05CorporateStructure(Task):
             text += f" Notable brands: {', '.join(siblings)}."
 
         return [crm.paragraph(text)]
+
+
+    def detect_events(
+        self,
+        prev_output: dict[str, Any] | None,
+        curr_output: dict[str, Any] | None,
+    ) -> list[DetectedEvent]:
+        """Alert on a corporate-structure transition. The two cases that
+        meaningfully change a BDR's prospecting:
+
+        - standalone → subsidiary (the company was acquired)
+        - standalone → parent  (the company acquired someone)
+        - subsidiary → standalone (spin-off — sometimes a buying-friendly state)
+        - parent → subsidiary (the parent itself got acquired)
+        """
+        if prev_output is None or curr_output is None:
+            return []
+        prev_type = prev_output.get("structure_type")
+        curr_type = curr_output.get("structure_type")
+        if not curr_type or prev_type == curr_type:
+            return []
+        # First-detection guard: if prev_type is missing entirely (None / not
+        # in the output schema) treat as no-prior-comparable-state.
+        if not prev_type:
+            return []
+        new_parent = curr_output.get("parent_company") or ""
+        summary = (
+            f"Corporate structure changed: {prev_type} → {curr_type}"
+            + (f" (parent: {new_parent})" if new_parent else "")
+        )
+        signature = f"module_05:structure_type:{prev_type}_to_{curr_type}"
+        return [DetectedEvent(
+            account_page_id="",
+            module=self.name,
+            signal_type="M&A",
+            summary=summary,
+            source_url=None,
+            signature=signature,
+        )]
 
 
 def _rich_text(s: str) -> dict[str, Any]:

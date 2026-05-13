@@ -17,7 +17,7 @@ from typing import Any
 
 import crm
 import prompts.module_14_hiring_signal as prompt
-from tasks.base import Task, _today_header
+from tasks.base import DetectedEvent, Task, _today_header
 from tools.ats_fetcher import ATSFetcherTool
 from tools.base import Tool
 from tools.hiring_signals import HiringSignalsTool
@@ -168,6 +168,82 @@ class Module14HiringSignal(Task):
                 blocks.append(crm.bullet(f"{title} [{tier_label}]"))
 
         return blocks
+
+    def detect_events(
+        self,
+        prev_output: dict[str, Any] | None,
+        curr_output: dict[str, Any] | None,
+    ) -> list[DetectedEvent]:
+        """Two distinct alert paths:
+
+        1. `important_roles_recently_closed` — already diffed by ATSSnapshotStore
+           between snapshots. A Tier-1 or Tier-2 closure means the company just
+           hired for a senior creative/marketing role; the team is now in place
+           and ramping. Read straight from curr_output (no prev diff needed —
+           the tool already did the work).
+
+        2. New Tier-1 role appearing in `important_roles_open` that wasn't in
+           the prior snapshot's open list. The snapshot store surfaces CLOSURES
+           but not class-additions; diff externally.
+        """
+        if curr_output is None:
+            return []
+        events: list[DetectedEvent] = []
+
+        # Path 1: closures since previous snapshot. Tier 1+2 only.
+        closed = curr_output.get("important_roles_recently_closed") or []
+        for r in closed:
+            tier = r.get("tier") or ""
+            if tier not in ("tier_1_marketing_ai", "tier_2_senior_leadership"):
+                continue
+            title = r.get("title") or ""
+            if not title:
+                continue
+            sig = f"module_14:closed:{tier}:{title.lower()}"
+            events.append(DetectedEvent(
+                account_page_id="",
+                module=self.name,
+                signal_type="senior-hire",
+                summary=(
+                    f"Senior role just filled ({_TIER_LABEL.get(tier, tier)}): "
+                    f"{title} — team is in place, ramping."
+                ),
+                source_url=None,
+                signature=sig,
+            ))
+
+        # Path 2: new Tier-1 opens not present in prev. First-run guard.
+        if prev_output is not None:
+            prev_open = prev_output.get("important_roles_open") or []
+            prev_tier1_titles = {
+                (r.get("title") or "").strip().lower()
+                for r in prev_open
+                if r.get("tier") == "tier_1_marketing_ai"
+            }
+            for r in curr_output.get("important_roles_open") or []:
+                if r.get("tier") != "tier_1_marketing_ai":
+                    continue
+                title = (r.get("title") or "").strip()
+                if not title or title.lower() in prev_tier1_titles:
+                    continue
+                # In-scope only (UK+EU+NA) — out-of-scope Tier-1 opens are too
+                # noisy for an alert (per Module 14's location-aware filter).
+                if r.get("in_scope") is not True:
+                    continue
+                sig = f"module_14:open_tier1:{title.lower()}"
+                events.append(DetectedEvent(
+                    account_page_id="",
+                    module=self.name,
+                    signal_type="senior-hire",
+                    summary=(
+                        f"New marketing+AI role open in UK/EU/NA: {title}"
+                        + (f" — {r.get('location')}" if r.get("location") else "")
+                    ),
+                    source_url=r.get("url"),
+                    signature=sig,
+                ))
+
+        return events
 
     def to_signal_sections(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         signal = output.get("headcount_signal")

@@ -6,7 +6,7 @@ import logging
 import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,7 +17,7 @@ from crm import Account, NotionCRM
 from providers.base import LLMProvider
 from run_log import RunLog, RunRecord, iso_now, serialize_output
 from tasks import GATE_TASKS, TASK_REGISTRY
-from tasks.base import Task, TaskResult
+from tasks.base import DetectedEvent, Task, TaskResult
 from writeback import write_account_outcome, write_gate_failure_to_notion
 
 
@@ -43,6 +43,10 @@ class AccountOutcome:
     overall_status: str          # done | needs_review | failed | out_of_scope
     wrote_to_notion: bool
     error: str | None = None
+    # Phase B (2026-05-13): alert-worthy transitions detected by per-task
+    # detect_events hooks. Phase C consumes this list to write Needs Attention
+    # tags + a Notion comment per account-run.
+    detected_events: list[DetectedEvent] = field(default_factory=list)
 
 
 class Orchestrator:
@@ -82,12 +86,13 @@ class Orchestrator:
             raise ValueError(f"Unknown task(s): {unknown}. Known: {list(TASK_REGISTRY)}")
         tasks = [TASK_REGISTRY[n]() for n in task_names]
 
-        # Phase A: pre-load latest successful run per (account, task) in one
-        # SQLite GROUP BY so the per-account threads can decide skip-vs-run
-        # without hitting the DB themselves.
+        # Pre-load latest successful run per (account, task) in one SQLite
+        # GROUP BY. Used by Phase A freshness gating to decide skip-vs-run AND
+        # by Phase B diff detection to compute alert transitions vs the prior
+        # run. One query at batch start beats N×M queries inside the threads.
         freshness = self.run_log.latest_successful_runs(
             [a.page_id for a in accounts],
-        ) if self.module_since else {}
+        )
 
         outcomes: list[AccountOutcome] = []
         with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
@@ -162,6 +167,11 @@ class Orchestrator:
         if gate_failed:
             return self._handle_gate_failure(account, results, dry_run)
 
+        # Phase B: per-task diff detection. Walks each successful TaskResult,
+        # loads the prior output from the pre-loaded freshness dict, and asks
+        # the task class to emit any alert-worthy transitions.
+        detected_events = self._collect_detected_events(account, tasks, results, freshness)
+
         overall_conf = _aggregate_confidence(results)
         overall_status = _derive_status(results, overall_conf)
 
@@ -169,6 +179,7 @@ class Orchestrator:
             return AccountOutcome(
                 account=account, task_results=results, overall_confidence=overall_conf,
                 overall_status=overall_status, wrote_to_notion=False,
+                detected_events=detected_events,
             )
 
         try:
@@ -178,12 +189,78 @@ class Orchestrator:
             return AccountOutcome(
                 account=account, task_results=results, overall_confidence=overall_conf,
                 overall_status="failed", wrote_to_notion=False, error=str(e),
+                detected_events=detected_events,
             )
 
         return AccountOutcome(
             account=account, task_results=results, overall_confidence=overall_conf,
             overall_status=overall_status, wrote_to_notion=True,
+            detected_events=detected_events,
         )
+
+    def _collect_detected_events(
+        self,
+        account: Account,
+        tasks: list[Task],
+        results: list[TaskResult],
+        freshness: dict[tuple[str, str], dict[str, Any]],
+    ) -> list[DetectedEvent]:
+        """Phase B: per-task diff detection.
+
+        For each task in this run, locate its prior output in the freshness
+        pre-load. If prev.prompt_version != curr.prompt_version, skip (schema
+        drift can't produce comparable diffs). Otherwise call
+        task.detect_events(prev_output, curr_output) and collect.
+
+        First-run case (no prior row): each task's detect_events sees prev=None
+        and returns [] by contract — alerts trigger on TRANSITIONS, not on
+        initial state.
+        """
+        import json
+        task_by_name = {t.name: t for t in tasks}
+        events: list[DetectedEvent] = []
+        for result in results:
+            task = task_by_name.get(result.task_name)
+            if task is None or result.output is None or result.error:
+                continue
+            prev = freshness.get((account.page_id, result.task_name))
+            prev_output: dict[str, Any] | None = None
+            if prev:
+                # Schema-version guard: a prompt version bump can rename
+                # fields, change enum vocab, or rearrange shapes. Diffing
+                # across a version boundary produces spurious events.
+                if (prev.get("prompt_version")
+                        and result.prompt_version
+                        and prev["prompt_version"] != result.prompt_version):
+                    log.info(
+                        "[%s] %s: skipping diff — prompt_version drift (%s → %s)",
+                        account.name, result.task_name,
+                        prev["prompt_version"], result.prompt_version,
+                    )
+                    continue
+                if prev.get("output_json"):
+                    try:
+                        prev_output = json.loads(prev["output_json"])
+                    except (ValueError, TypeError):
+                        prev_output = None
+            try:
+                task_events = task.detect_events(prev_output, result.output)
+            except Exception:
+                log.exception(
+                    "[%s] %s: detect_events raised — skipping diff",
+                    account.name, result.task_name,
+                )
+                continue
+            for e in task_events:
+                events.append(DetectedEvent(
+                    account_page_id=account.page_id,
+                    module=e.module,
+                    signal_type=e.signal_type,
+                    summary=e.summary,
+                    source_url=e.source_url,
+                    signature=e.signature,
+                ))
+        return events
 
     def _maybe_skip_fresh(
         self,

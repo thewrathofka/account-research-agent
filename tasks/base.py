@@ -66,6 +66,31 @@ def _today_header() -> str:
 
 
 @dataclass
+class DetectedEvent:
+    """Phase B (2026-05-13): one alert-worthy transition detected in a per-task
+    diff. The orchestrator collects these per account and forwards them to the
+    writeback's alerting path (`Needs Attention` multi_select + one Notion
+    comment summarising all events for the run).
+
+    Fields:
+    - account_page_id: which Notion page the alert is for
+    - module: the task that detected the transition (e.g. "module_06_structural_news")
+    - signal_type: short tag matching crm.NEEDS_ATTENTION_OPTIONS (e.g. "bankruptcy")
+    - summary: 1-2 sentence human-readable description of what changed
+    - source_url: optional canonical source for the alert (often a citation URL)
+    - signature: stable string used by event_alerts dedup. Should hash to the
+      same value for "the same underlying event" across consecutive runs so the
+      14-day cooldown actually suppresses repeats.
+    """
+    account_page_id: str
+    module: str
+    signal_type: str
+    summary: str
+    signature: str
+    source_url: str | None = None
+
+
+@dataclass
 class TaskResult:
     task_name: str
     output: dict[str, Any] | None       # parsed JSON from the agent
@@ -143,6 +168,28 @@ class Task:
         Only tasks that write tags to PROP_BUYING_SIGNALS override this. Each entry:
           {"signal": <signal name>, "logic": <1-3 sentences>, "sources": [url, ...]}.
         Empty list when no signals detected this run.
+        """
+        return []
+
+    def detect_events(
+        self,
+        prev_output: dict[str, Any] | None,
+        curr_output: dict[str, Any] | None,
+    ) -> list["DetectedEvent"]:
+        """Phase B (2026-05-13): per-task diff hook. Compare this run's output
+        with the most recent prior successful run for the same (account, task)
+        and return alert-worthy transitions.
+
+        Default: empty list (no events for this module).
+
+        Contract:
+        - prev_output is None on first detection or after a prompt_version
+          mismatch — return [] (don't alert on initial state, alerts trigger
+          on TRANSITIONS only).
+        - curr_output is None when the current run failed — return [].
+        - Each returned DetectedEvent must have a stable `signature` so the
+          orchestrator's alert dedup table (`event_alerts`) can suppress
+          repeats within the cooldown window.
         """
         return []
 

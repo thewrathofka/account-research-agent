@@ -18,7 +18,15 @@ from typing import Any
 
 import crm
 import prompts.module_04_pain_points as prompt
-from tasks.base import Task, _today_header
+from tasks.base import DetectedEvent, Task, _today_header
+
+
+# Pain Point Tags that signal a sales-relevant TIMING shift (not just narrative).
+# When one of these newly appears in a rerun's tags, the BDR should look.
+_TIMING_PAIN_TAGS: dict[str, str] = {
+    "post-layoff overflow": "structure-ambiguous",
+    "launch surge": "agency-switch",
+}
 
 
 # Upstream modules whose structured outputs anchor the narrative without
@@ -114,6 +122,32 @@ class Module04PainPoints(Task):
                 "multi_select": [{"name": t} for t in valid],
             }
         }
+
+    def detect_events(
+        self,
+        prev_output: dict[str, Any] | None,
+        curr_output: dict[str, Any] | None,
+    ) -> list[DetectedEvent]:
+        """A new timing-shift Pain Point Tag (post-layoff overflow / launch
+        surge) appearing where it wasn't before is sales-relevant — they
+        indicate a moment when Superside's overflow capacity is most useful."""
+        if prev_output is None or curr_output is None:
+            return []
+        prev_tags = set(prev_output.get("tags") or [])
+        curr_tags = set(curr_output.get("tags") or [])
+        events: list[DetectedEvent] = []
+        for tag, signal_type in _TIMING_PAIN_TAGS.items():
+            if tag in curr_tags and tag not in prev_tags:
+                signature = f"module_04:tag:{tag}"
+                events.append(DetectedEvent(
+                    account_page_id="",
+                    module=self.name,
+                    signal_type=signal_type,
+                    summary=f"Pain-point shift: '{tag}' newly identified in this run.",
+                    source_url=None,
+                    signature=signature,
+                ))
+        return events
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         """Emit one-line intro paragraph + per-pain-point bullets + tag bullet.

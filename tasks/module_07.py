@@ -12,7 +12,27 @@ from typing import Any
 
 import crm
 import prompts.module_07_trigger_events as prompt
-from tasks.base import Task
+from tasks.base import DetectedEvent, Task
+
+
+# Trigger name → NEEDS_ATTENTION signal tag. Triggers absent from this map
+# write to Buying Signals but do NOT fire a Needs Attention alert (rebrand/
+# campaign and AI initiative are softer signals).
+_TRIGGER_TO_SIGNAL: dict[str, str] = {
+    "funding round": "funding",
+    "agency switch": "agency-switch",
+    "active creative jobs": "senior-hire",
+}
+
+
+def _trigger_signature(trigger: str, detail: dict[str, Any]) -> str:
+    """Stable signature for diffing trigger_details. Uses URL when available
+    (most stable across reruns), otherwise first 24 chars of summary."""
+    url = (detail.get("url") or "").strip()
+    if url:
+        return f"module_07:{trigger}:url:{url}"
+    summary = (detail.get("summary") or "").strip()[:24].lower()
+    return f"module_07:{trigger}:summary:{summary}"
 
 
 class Module07TriggerEvents(Task):
@@ -63,3 +83,37 @@ class Module07TriggerEvents(Task):
             sources = [per_url] if per_url else list(output.get("sources") or [])
             sections.append({"signal": trigger, "logic": summary, "sources": sources})
         return sections
+
+    def detect_events(
+        self,
+        prev_output: dict[str, Any] | None,
+        curr_output: dict[str, Any] | None,
+    ) -> list[DetectedEvent]:
+        """Diff per-trigger by URL/summary rather than by tag set — a second
+        funding round shows the same `funding round` tag but a different
+        summary, and that IS a new event."""
+        if prev_output is None or curr_output is None:
+            return []
+        prev_details = prev_output.get("trigger_details") or []
+        curr_details = curr_output.get("trigger_details") or []
+        prev_sigs = {
+            _trigger_signature(d.get("trigger") or "", d) for d in prev_details
+        }
+        events: list[DetectedEvent] = []
+        for d in curr_details:
+            trigger = d.get("trigger") or ""
+            if trigger not in _TRIGGER_TO_SIGNAL:
+                continue
+            sig = _trigger_signature(trigger, d)
+            if sig in prev_sigs:
+                continue
+            summary = (d.get("summary") or "").strip() or trigger
+            events.append(DetectedEvent(
+                account_page_id="",
+                module=self.name,
+                signal_type=_TRIGGER_TO_SIGNAL[trigger],
+                summary=f"{trigger}: {summary[:240]}",
+                source_url=d.get("url"),
+                signature=sig,
+            ))
+        return events
