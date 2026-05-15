@@ -3,10 +3,10 @@
   "notes": "Verified live 2026-05-06. Parent company with many subs (NetSuite, Cerner). 162k employees. Caught Mar 2026 layoff of 30k → buying-frozen.",
   "module_01_gate": {
     "expected": {
-      "size_band": "5000+",
       "operates_in_eu": true,
+      "operates_in_uk": true,
       "operates_in_na": true,
-      "operates_in_eu_or_na": true,
+      "operates_in_scope": true,
       "confidence": "high"
     }
   },

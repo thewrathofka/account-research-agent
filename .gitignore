@@ -7,3 +7,4 @@ output_*.json
 runs.db
 runs.db-shm
 runs.db-wal
+evals/golden/*.observed.json

@@ -4,8 +4,11 @@
   "module_01_gate": {
     "expected": {
       "operates_in_eu": false,
+      "operates_in_uk": false,
+      "operates_in_norway": false,
+      "operates_in_switzerland": false,
       "operates_in_na": false,
-      "operates_in_eu_or_na": false,
+      "operates_in_scope": false,
       "confidence": "high"
     },
     "expected_confidence": "high"

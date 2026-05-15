@@ -1,12 +1,12 @@
 {
   "company_name": "Stripe, Inc.",
-  "notes": "Sanity case — large public-facing fintech, well-indexed. Should pass module 01 gate at high confidence with both EU + NA presence.",
+  "notes": "Sanity case — large public-facing fintech, well-indexed. Should pass module 01 gate at high confidence with NA (San Francisco), EU (Dublin Ireland), and UK (London) presence. v1.3.0 schema: operates_in_scope replaces operates_in_eu_or_na; UK is its own boolean. size_band dropped (not in prompt output — bucket is derived in code from employee_count_estimate).",
   "module_01_gate": {
     "expected": {
-      "size_band": "5000+",
       "operates_in_eu": true,
+      "operates_in_uk": true,
       "operates_in_na": true,
-      "operates_in_eu_or_na": true,
+      "operates_in_scope": true,
       "confidence": "high"
     }
   },

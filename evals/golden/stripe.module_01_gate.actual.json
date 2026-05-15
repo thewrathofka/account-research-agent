@@ -1,17 +1,27 @@
 {
   "company_name": "Stripe, Inc.",
-  "size_band": "5000+",
-  "employee_count_estimate": 8150,
+  "employee_count_estimate": 8200,
   "operates_in_eu": true,
+  "operates_in_uk": true,
+  "operates_in_norway": false,
+  "operates_in_switzerland": false,
   "operates_in_na": true,
-  "operates_in_eu_or_na": true,
-  "evidence_eu": "Dual headquarters in Dublin, Ireland plus offices in London and Paris (stripe.com/newsroom/information, Glassdoor, Bloomberg)",
-  "evidence_na": "Dual headquarters in South San Francisco and offices in Chicago, New York, and Seattle (Craft.co, Glassdoor, Clay.com)",
+  "operates_in_scope": true,
+  "regions_present": [
+    "USA",
+    "Ireland",
+    "UK",
+    "France"
+  ],
+  "evidence_in_scope": "Dual HQ in San Francisco (USA) and Dublin (Ireland/EU) per stripe.com/newsroom; confirmed London office (UK) per stripe.com/newsroom/news/tour-london-2025; Paris office/operations confirmed per stripe.com/newsroom/news/tour-paris-2025.",
   "sources": [
     "https://stripe.com/newsroom/information",
-    "https://craft.co/stripe/locations",
-    "https://www.reveliolabs.com/companies/stripe/employees/",
-    "https://www.glassdoor.com/Location/All-Stripe-Office-Locations-E671932.htm"
+    "https://stripe.com/newsroom/news/stripe-opens-new-dublin-hq",
+    "https://stripe.com/newsroom/news/tour-london-2025",
+    "https://stripe.com/newsroom/news/tour-paris-2025",
+    "https://sqmagazine.co.uk/how-many-people-work-at-stripe/",
+    "https://www.unifygtm.com/insights-headcount/stripe",
+    "https://www.linkedin.com/company/stripe"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null

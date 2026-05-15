@@ -1,0 +1,23 @@
+{
+  "company_name": "CRED (Dreamplug Technologies Pvt. Ltd.)",
+  "employee_count_estimate": 1056,
+  "operates_in_eu": false,
+  "operates_in_uk": false,
+  "operates_in_norway": false,
+  "operates_in_switzerland": false,
+  "operates_in_na": false,
+  "operates_in_scope": false,
+  "regions_present": [
+    "India"
+  ],
+  "evidence_in_scope": null,
+  "sources": [
+    "https://tracxn.com/d/companies/cred/__XH8YJr346Ojjmnmyfg6WayMKrLBc4hgzZ3qN258QxVg",
+    "https://crustdata.com/profiles/company/cred-5726",
+    "https://en.wikipedia.org/wiki/Cred_(company)",
+    "https://tattvammedia.com/blog/cred-offices-in-india/",
+    "https://www.zoominfo.com/c/dreamplug-technologies-pvt-ltd/462747688"
+  ],
+  "confidence": "high",
+  "reason_if_out_of_scope": "India-only fintech (HQ Bengaluru, offices in Mumbai, Gurgaon, Hyderabad) with no confirmed offices or operations in the USA, Canada, any EU member state, the UK, Norway, or Switzerland per all available sources."
+}

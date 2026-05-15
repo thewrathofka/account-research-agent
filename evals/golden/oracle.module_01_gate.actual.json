@@ -1,17 +1,27 @@
 {
   "company_name": "Oracle Corporation",
-  "size_band": "5000+",
   "employee_count_estimate": 162000,
   "operates_in_eu": true,
+  "operates_in_uk": true,
+  "operates_in_norway": false,
+  "operates_in_switzerland": false,
   "operates_in_na": true,
-  "operates_in_eu_or_na": true,
-  "evidence_eu": "Oracle offices in multiple EU countries including France, Germany, Ireland, and Italy per official contacts page.",
-  "evidence_na": "Oracle's corporate headquarters in Austin, Texas, plus numerous US offices listed by state.",
+  "operates_in_scope": true,
+  "regions_present": [
+    "USA",
+    "UK",
+    "Germany",
+    "Netherlands",
+    "Ireland",
+    "France"
+  ],
+  "evidence_in_scope": "HQ in Austin, Texas (USA/NA) per SEC 10-K; UK offices in London, Reading, Edinburgh, Manchester per oracle.com/uk/corporate/contact/field-offices/; EU presence in Germany and Netherlands confirmed via $3B cloud/AI investment announcement and active OCI data centres.",
   "sources": [
-    "https://www.oracle.com/corporate/contact/global.html",
-    "https://www.oracle.com/corporate/contact/field-offices/",
+    "https://s23.q4cdn.com/440135859/files/doc_downloads/proxy-voting-material/2025/09/Oracle-2025-10-K-PDF-Final-9-26-25.pdf",
     "https://stockanalysis.com/stocks/orcl/employees/",
-    "https://www.clay.com/dossier/oracle-headquarters-office-locations"
+    "https://www.oracle.com/uk/corporate/contact/field-offices/",
+    "https://www.rcrwireless.com/20250716/ai-infrastructure/oracle-ai-europe",
+    "https://investor.oracle.com/investor-news/news-details/2025/Oracle-Announces-Fiscal-2025-Fourth-Quarter-and-Fiscal-Full-Year-Financial-Results/default.aspx"
   ],
   "confidence": "high",
   "reason_if_out_of_scope": null

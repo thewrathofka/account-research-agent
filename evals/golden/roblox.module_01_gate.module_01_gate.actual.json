@@ -1,0 +1,25 @@
+{
+  "company_name": "Roblox Corporation",
+  "employee_count_estimate": 3065,
+  "operates_in_eu": true,
+  "operates_in_uk": true,
+  "operates_in_norway": false,
+  "operates_in_switzerland": false,
+  "operates_in_na": true,
+  "operates_in_scope": true,
+  "regions_present": [
+    "USA",
+    "UK",
+    "Ireland",
+    "Belgium"
+  ],
+  "evidence_in_scope": "Roblox's own UK Economic Impact Report (2025) states offices in London (UK), Brussels (Belgium, EU), Dublin (Ireland, EU), San Francisco (USA), and New York (USA).",
+  "sources": [
+    "https://about.roblox.com/pdf/2024-united-kingdom-economic-report-en",
+    "https://stockanalysis.com/stocks/rblx/employees/",
+    "https://www.pocketgamer.biz/roblox-workforce-grows-24-to-over-3000-full-time-staff/",
+    "https://uk.investing.com/news/company-news/roblox-corp-announces-headquarters-relocation-93CH-3692507"
+  ],
+  "confidence": "high",
+  "reason_if_out_of_scope": null
+}

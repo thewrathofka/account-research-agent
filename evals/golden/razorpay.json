@@ -3,7 +3,7 @@
   "notes": "Negative gate case — Indian fintech, primary operations in India. Some US/UK rep activity but no confirmed EU/NA office historically. v1.0.0 prompt should mark out_of_scope OR low confidence. If they've expanded, the prompt should still err on the side of out_of_scope unless evidence is strong. Update annotation if their footprint changes.",
   "module_01_gate": {
     "expected": {
-      "operates_in_eu_or_na": false,
+      "operates_in_scope": false,
       "confidence": "high"
     }
   }
