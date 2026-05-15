@@ -7,13 +7,61 @@ answer "did this prompt version perform better than the last one?" later.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, TypeVar
+
+log = logging.getLogger(__name__)
+
+T = TypeVar("T")
+
+
+def _is_transient_hrana_error(exc: BaseException) -> bool:
+    """True iff `exc` is a libsql/Hrana transient error worth retrying.
+
+    `libsql_experimental` wraps Turso server errors as plain `ValueError` with
+    the Hrana body in the message. The most common transient mode is a
+    `stream not found` 404 caused by a brief network drop invalidating the
+    server-side stream while the local socket stayed open. Also treat generic
+    Hrana 5xx and connection-reset wording as transient.
+    """
+    if not isinstance(exc, ValueError):
+        return False
+    msg = str(exc)
+    return (
+        "stream not found" in msg
+        or "Hrana" in msg and ("status=5" in msg or "Connection reset" in msg)
+    )
+
+
+def _with_hrana_retry(fn: Callable[[], T], *, label: str, attempts: int = 3) -> T:
+    """Run `fn` up to `attempts` times, retrying transient Hrana errors with
+    exponential backoff (0s, 2s, 4s). Non-transient errors raise immediately.
+    `label` is logged in the WARNING on each retry so the source is visible.
+    """
+    last_err: BaseException | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except ValueError as e:
+            if not _is_transient_hrana_error(e) or attempt == attempts - 1:
+                raise
+            last_err = e
+            backoff = 2 * attempt  # 0s, 2s, 4s
+            if backoff:
+                time.sleep(backoff)
+            log.warning(
+                "run_log.%s: transient Hrana error on attempt %d/%d, retrying: %s",
+                label, attempt + 1, attempts, e,
+            )
+    assert last_err is not None  # unreachable; satisfies type checker
+    raise last_err
 
 
 _SCHEMA = """
@@ -215,25 +263,27 @@ class RunLog:
             conn.close()
 
     def record(self, run: RunRecord) -> int:
-        with self._conn() as c:
-            cur = c.execute(
-                """INSERT INTO task_runs
-                (account_page_id, account_name, task_name, started_at, completed_at,
-                 status, confidence, model, input_tokens, output_tokens,
-                 search_count, duration_seconds, error, output_json, dry_run,
-                 prompt_version, provider, git_sha,
-                 cached_input_tokens, model_tier, model_used, tool_results_seen)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (run.account_page_id, run.account_name, run.task_name,
-                 run.started_at, run.completed_at, run.status, run.confidence,
-                 run.model, run.input_tokens, run.output_tokens, run.search_count,
-                 run.duration_seconds, run.error, run.output_json,
-                 1 if run.dry_run else 0,
-                 run.prompt_version, run.provider, run.git_sha,
-                 run.cached_input_tokens, run.model_tier, run.model_used,
-                 run.tool_results_seen),
-            )
-            return cur.lastrowid
+        def _do() -> int:
+            with self._conn() as c:
+                cur = c.execute(
+                    """INSERT INTO task_runs
+                    (account_page_id, account_name, task_name, started_at, completed_at,
+                     status, confidence, model, input_tokens, output_tokens,
+                     search_count, duration_seconds, error, output_json, dry_run,
+                     prompt_version, provider, git_sha,
+                     cached_input_tokens, model_tier, model_used, tool_results_seen)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (run.account_page_id, run.account_name, run.task_name,
+                     run.started_at, run.completed_at, run.status, run.confidence,
+                     run.model, run.input_tokens, run.output_tokens, run.search_count,
+                     run.duration_seconds, run.error, run.output_json,
+                     1 if run.dry_run else 0,
+                     run.prompt_version, run.provider, run.git_sha,
+                     run.cached_input_tokens, run.model_tier, run.model_used,
+                     run.tool_results_seen),
+                )
+                return cur.lastrowid
+        return _with_hrana_retry(_do, label="record")
 
     def latest_successful_runs(
         self, account_page_ids: list[str],
@@ -256,19 +306,21 @@ class RunLog:
         if not account_page_ids:
             return {}
         placeholders = ",".join("?" for _ in account_page_ids)
-        with self._conn() as c:
-            rows = c.execute(
-                f"""SELECT account_page_id, task_name,
-                          MAX(started_at) AS latest,
-                          output_json, prompt_version, confidence
-                   FROM task_runs
-                   WHERE account_page_id IN ({placeholders})
-                     AND status = 'success'
-                     AND (confidence IS NULL OR confidence != 'failed')
-                     AND COALESCE(dry_run, 0) = 0
-                   GROUP BY account_page_id, task_name""",
-                tuple(account_page_ids),
-            ).fetchall()
+        def _do() -> list[Any]:
+            with self._conn() as c:
+                return c.execute(
+                    f"""SELECT account_page_id, task_name,
+                              MAX(started_at) AS latest,
+                              output_json, prompt_version, confidence
+                       FROM task_runs
+                       WHERE account_page_id IN ({placeholders})
+                         AND status = 'success'
+                         AND (confidence IS NULL OR confidence != 'failed')
+                         AND COALESCE(dry_run, 0) = 0
+                       GROUP BY account_page_id, task_name""",
+                    tuple(account_page_ids),
+                ).fetchall()
+        rows = _with_hrana_retry(_do, label="latest_successful_runs")
         return {
             (pid, task): {
                 "started_at": started_at,
@@ -296,12 +348,14 @@ class RunLog:
         acknowledged since, skip the re-alert."""
         from datetime import datetime as _dt, timedelta, timezone as _tz
         cutoff = (_dt.now(_tz.utc) - timedelta(days=within_days)).isoformat()
-        with self._conn() as c:
-            row = c.execute(
-                """SELECT MAX(alerted_at) FROM event_alerts
-                   WHERE account_page_id = ? AND signature = ? AND alerted_at >= ?""",
-                (page_id, signature, cutoff),
-            ).fetchone()
+        def _do() -> Any:
+            with self._conn() as c:
+                return c.execute(
+                    """SELECT MAX(alerted_at) FROM event_alerts
+                       WHERE account_page_id = ? AND signature = ? AND alerted_at >= ?""",
+                    (page_id, signature, cutoff),
+                ).fetchone()
+        row = _with_hrana_retry(_do, label="recent_alert")
         return row[0] if row and row[0] else None
 
     def record_alert(
@@ -316,13 +370,15 @@ class RunLog:
         """Append a row to the event_alerts ledger. Phase C calls this when
         the orchestrator hands an event to writeback (i.e. AFTER dedup, so
         every recorded row represents a real Notion-side action)."""
-        with self._conn() as c:
-            c.execute(
-                """INSERT INTO event_alerts
-                   (account_page_id, signature, alerted_at, module, signal_type, summary)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (page_id, signature, iso_now(), module, signal_type, summary),
-            )
+        def _do() -> None:
+            with self._conn() as c:
+                c.execute(
+                    """INSERT INTO event_alerts
+                       (account_page_id, signature, alerted_at, module, signal_type, summary)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (page_id, signature, iso_now(), module, signal_type, summary),
+                )
+        _with_hrana_retry(_do, label="record_alert")
 
     def summary(self) -> dict[str, Any]:
         with self._conn() as c:
@@ -523,13 +579,15 @@ class ToolCallCache:
     def lookup(self, tool_name: str, args: dict[str, Any]) -> str | None:
         """Return cached response text if not expired, else None."""
         args_hash = self._hash_args(args)
-        with _managed_conn(self.path) as c:
-            row = c.execute(
-                """SELECT response_text, expires_at
-                   FROM tool_call_cache
-                   WHERE tool_name = ? AND args_hash = ?""",
-                (tool_name, args_hash),
-            ).fetchone()
+        def _do() -> Any:
+            with _managed_conn(self.path) as c:
+                return c.execute(
+                    """SELECT response_text, expires_at
+                       FROM tool_call_cache
+                       WHERE tool_name = ? AND args_hash = ?""",
+                    (tool_name, args_hash),
+                ).fetchone()
+        row = _with_hrana_retry(_do, label="ToolCallCache.lookup")
         if row is None:
             return None
         response_text, expires_at = row
@@ -562,13 +620,15 @@ class ToolCallCache:
         else:
             ttl = self.ttl
         expires_at = (_dt.now(_tz.utc) + ttl).isoformat()
-        with _managed_conn(self.path) as c:
-            c.execute(
-                """INSERT OR REPLACE INTO tool_call_cache
-                   (tool_name, args_hash, response_text, cached_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (tool_name, args_hash, response_text, cached_at, expires_at),
-            )
+        def _do() -> None:
+            with _managed_conn(self.path) as c:
+                c.execute(
+                    """INSERT OR REPLACE INTO tool_call_cache
+                       (tool_name, args_hash, response_text, cached_at, expires_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (tool_name, args_hash, response_text, cached_at, expires_at),
+                )
+        _with_hrana_retry(_do, label="ToolCallCache.store")
 
     def stats(self) -> dict[str, int]:
         """Return current cache size + expired count for telemetry."""
@@ -605,29 +665,33 @@ class ATSSnapshotStore:
         jobs: list[dict[str, Any]],
     ) -> None:
         titles = [j.get("title", "") for j in jobs if j.get("title")]
-        with _managed_conn(self.path) as c:
-            c.execute(
-                """INSERT INTO ats_snapshots
-                   (company_name, provider, slug, snapshot_at, titles_json, jobs_json)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (company, provider, slug, iso_now(),
-                 json.dumps(titles, ensure_ascii=False),
-                 json.dumps(jobs, ensure_ascii=False, default=str)),
-            )
+        def _do() -> None:
+            with _managed_conn(self.path) as c:
+                c.execute(
+                    """INSERT INTO ats_snapshots
+                       (company_name, provider, slug, snapshot_at, titles_json, jobs_json)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (company, provider, slug, iso_now(),
+                     json.dumps(titles, ensure_ascii=False),
+                     json.dumps(jobs, ensure_ascii=False, default=str)),
+                )
+        _with_hrana_retry(_do, label="ATSSnapshotStore.store")
 
     def load_latest(
         self, *, company: str, provider: str,
     ) -> dict[str, Any] | None:
         """Return the most recent snapshot for the (company, provider) pair, or
         None if no prior snapshot exists. Decodes `titles` back to a Python list."""
-        with _managed_conn(self.path) as c:
-            row = c.execute(
-                """SELECT id, slug, snapshot_at, titles_json, jobs_json
-                   FROM ats_snapshots
-                   WHERE company_name = ? AND provider = ?
-                   ORDER BY id DESC LIMIT 1""",
-                (company, provider),
-            ).fetchone()
+        def _do() -> Any:
+            with _managed_conn(self.path) as c:
+                return c.execute(
+                    """SELECT id, slug, snapshot_at, titles_json, jobs_json
+                       FROM ats_snapshots
+                       WHERE company_name = ? AND provider = ?
+                       ORDER BY id DESC LIMIT 1""",
+                    (company, provider),
+                ).fetchone()
+        row = _with_hrana_retry(_do, label="ATSSnapshotStore.load_latest")
         if row is None:
             return None
         _id, slug, snapshot_at, titles_json, jobs_json = row
