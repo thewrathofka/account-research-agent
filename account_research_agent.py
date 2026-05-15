@@ -163,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    if not args.verbose:
+        for noisy in ("httpx", "httpcore", "urllib3", "JobSpy"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
     crm = NotionCRM()
     # Fail loudly if Notion's schema drifted from EXPECTED_NOTION_PROPERTIES

@@ -18,6 +18,7 @@ safe default.
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
@@ -38,8 +39,8 @@ from rate_limit import JOBSPY_LIMITER
 HIRING_SIGNALS_SCHEMA: dict[str, Any] = {
     "name": "hiring_signals",
     "description": (
-        "Aggregate active job postings for a company from Indeed, LinkedIn, "
-        "Glassdoor, and ZipRecruiter. Returns titles + per-country counts. "
+        "Aggregate active job postings for a company from Indeed and LinkedIn. "
+        "Returns titles + per-country counts. "
         "Use this BEFORE web_search to get authoritative counts of open roles. "
         "Especially good for spotting creative/marketing hiring activity."
     ),
@@ -135,7 +136,7 @@ class HiringSignalsTool:
             try:
                 with JOBSPY_LIMITER:
                     df = scrape_jobs(
-                        site_name=["indeed", "linkedin", "glassdoor", "zip_recruiter"],
+                        site_name=["indeed", "linkedin"],
                         search_term=company,
                         location=country,
                         results_wanted=min(results_per_source, 25),
@@ -153,10 +154,12 @@ class HiringSignalsTool:
             err_suffix = (" Errors: " + "; ".join(per_country_errors)) if per_country_errors else ""
             return (
                 f"No active job listings found for {company} across "
-                f"Indeed/LinkedIn/Glassdoor/ZipRecruiter in {countries}.{err_suffix}"
+                f"Indeed/LinkedIn in {countries}.{err_suffix}"
             )
 
-        df = pd.concat(per_country_frames, ignore_index=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", FutureWarning)
+            df = pd.concat(per_country_frames, ignore_index=True)
 
         # Filter on normalized company name (Fix Appendix #13).
         target = normalize_company(company)
