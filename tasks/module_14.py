@@ -61,8 +61,14 @@ class Module14HiringSignal(Task):
             # Fall back to a sane default when the gate didn't surface countries.
             if gate.get("operates_in_na"):
                 regions = ["USA"]
+            elif gate.get("operates_in_uk"):
+                regions = ["UK"]
             elif gate.get("operates_in_eu"):
-                regions = ["UK", "Germany"]
+                regions = ["Germany", "France"]
+            elif gate.get("operates_in_norway"):
+                regions = ["Norway"]
+            elif gate.get("operates_in_switzerland"):
+                regions = ["Switzerland"]
         regions_str = ", ".join(regions) if regions else "USA"
 
         if news.get("structure_note") == "mass layoffs":

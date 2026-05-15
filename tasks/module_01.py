@@ -68,7 +68,7 @@ class Module01Gate(Task):
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
         if not self.gate_passes(output):
-            reason = output.get("reason_if_out_of_scope") or "No EU/NA operations confirmed."
+            reason = output.get("reason_if_out_of_scope") or "No in-scope (EU/UK/Norway/Switzerland/NA) operations confirmed."
             return [crm.paragraph(f"Out of scope: {reason}")]
 
         emp = output.get("employee_count_estimate")
@@ -79,9 +79,15 @@ class Module01Gate(Task):
         regions = []
         if output.get("operates_in_eu"):
             regions.append("EU")
+        if output.get("operates_in_uk"):
+            regions.append("UK")
+        if output.get("operates_in_norway"):
+            regions.append("Norway")
+        if output.get("operates_in_switzerland"):
+            regions.append("Switzerland")
         if output.get("operates_in_na"):
             regions.append("NA")
-        regions_str = " + ".join(regions) if regions else "no confirmed EU/NA presence"
+        regions_str = " + ".join(regions) if regions else "no confirmed in-scope presence"
 
         parts = [f"Size band: {size_str}"]
         if emp_str:
@@ -91,7 +97,14 @@ class Module01Gate(Task):
 
     @staticmethod
     def gate_passes(output: dict[str, Any] | None) -> bool:
-        """True iff the company should continue to downstream modules."""
+        """True iff the company should continue to downstream modules.
+
+        Reads the v1.3.0 `operates_in_scope` field. Falls back to the v1.2.0
+        `operates_in_eu_or_na` field for backward compatibility with cached
+        outputs in run_log from prior batches.
+        """
         if not output:
             return False
+        if "operates_in_scope" in output:
+            return bool(output.get("operates_in_scope"))
         return bool(output.get("operates_in_eu_or_na"))

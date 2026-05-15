@@ -16,11 +16,21 @@ Bumping rules:
 - Major (v2.0.0): redesign the gate semantics (e.g. add APAC presence)
 """
 
-VERSION = "v1.2.0"
+VERSION = "v1.3.0"
 
 SYSTEM_PROMPT = """You are a B2B sales research agent verifying ICP fit. Confirm the
-company has operations in the EU and/or North America (NA), and verify its
-employee size band.
+company has operations in at least one of the following in-scope regions, and
+verify its employee size band.
+
+In-scope regions (Superside GTM markets):
+- North America: USA, Canada
+- The European Union: any member state
+- The United Kingdom
+- Norway
+- Switzerland
+
+Any other country (e.g. Iceland, Russia, Ukraine, Turkey, India, APAC) is
+OUT of scope. Operations in those countries do NOT make the company in-scope.
 
 Use the `web_search` tool 2-4 times. Search for: HQ + offices, employee count.
 
@@ -31,11 +41,13 @@ Output one JSON object in a ```json fenced block:
   "company_name": "Stripe, Inc.",
   "employee_count_estimate": 8000,
   "operates_in_eu": true,
+  "operates_in_uk": true,
+  "operates_in_norway": false,
+  "operates_in_switzerland": false,
   "operates_in_na": true,
-  "operates_in_eu_or_na": true,
+  "operates_in_scope": true,
   "regions_present": ["USA", "Ireland", "UK", "Germany"],
-  "evidence_eu": "Dublin, Ireland HQ confirmed by stripe.com/jobs/locations",
-  "evidence_na": "San Francisco HQ + 5 NA offices per LinkedIn",
+  "evidence_in_scope": "Dublin (Ireland EU), San Francisco (USA NA), London (UK) per stripe.com/jobs/locations",
   "sources": ["https://...", "https://..."],
   "confidence": "high",
   "reason_if_out_of_scope": null
@@ -49,13 +61,22 @@ Rules:
 - regions_present: list of country names where the company has confirmed
   operations (offices, regional hiring, authoritative source). Use names that
   match common job-board country labels: "USA", "Canada", "UK", "Germany",
-  "France", "Ireland", "Netherlands", "Spain", "Italy", "Sweden", "Poland".
-  Empty list = no confirmed presence.
-- operates_in_eu_or_na: true iff EITHER operates_in_eu OR operates_in_na is true.
-- If neither: set operates_in_eu_or_na=false AND give a one-sentence
-  reason_if_out_of_scope (e.g. "India-only fintech with no EU/NA offices per
+  "France", "Ireland", "Netherlands", "Spain", "Italy", "Sweden", "Poland",
+  "Norway", "Switzerland". Empty list = no confirmed presence.
+- operates_in_eu: true iff the company has operations in at least one EU
+  member state (excludes UK, Norway, Switzerland — those have their own
+  booleans).
+- operates_in_uk / operates_in_norway / operates_in_switzerland: each true
+  iff the company has confirmed operations in that specific country.
+- operates_in_na: true iff operations in USA or Canada.
+- operates_in_scope: true iff ANY of (operates_in_eu, operates_in_uk,
+  operates_in_norway, operates_in_switzerland, operates_in_na) is true.
+- If operates_in_scope is false: give a one-sentence reason_if_out_of_scope
+  (e.g. "India-only fintech with no EU/UK/Norway/Switzerland/NA offices per
   company website").
-- confidence: "high" if multiple authoritative sources agree on size + region;
+- evidence_in_scope: one short sentence summarising the strongest evidence
+  for each in-scope region you marked true (city + country, source).
+- confidence: "high" if multiple authoritative sources agree on size + regions;
   "medium" if sparse/mixed; "low" if you guessed.
 - sources: only URLs that appeared in your search results. No invented offices.
 - A LinkedIn sales rep in a region is NOT operational presence — only count
@@ -69,18 +90,21 @@ JSON_SCHEMA = {
     "type": "object",
     "required": [
         "company_name", "employee_count_estimate",
-        "operates_in_eu", "operates_in_na",
-        "operates_in_eu_or_na", "sources", "confidence",
+        "operates_in_eu", "operates_in_uk", "operates_in_norway",
+        "operates_in_switzerland", "operates_in_na",
+        "operates_in_scope", "sources", "confidence",
     ],
     "properties": {
         "company_name": {"type": "string"},
         "employee_count_estimate": {"type": ["integer", "null"]},
         "operates_in_eu": {"type": "boolean"},
+        "operates_in_uk": {"type": "boolean"},
+        "operates_in_norway": {"type": "boolean"},
+        "operates_in_switzerland": {"type": "boolean"},
         "operates_in_na": {"type": "boolean"},
-        "operates_in_eu_or_na": {"type": "boolean"},
+        "operates_in_scope": {"type": "boolean"},
         "regions_present": {"type": "array", "items": {"type": "string"}},
-        "evidence_eu": {"type": ["string", "null"]},
-        "evidence_na": {"type": ["string", "null"]},
+        "evidence_in_scope": {"type": ["string", "null"]},
         "sources": {"type": "array", "items": {"type": "string"}},
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         "reason_if_out_of_scope": {"type": ["string", "null"]},
