@@ -1,4 +1,4 @@
-"""Module 14 — Hiring/downsizing signal (v1.4.0 adds ATS direct read).
+"""Module 11 — Hiring/downsizing signal (v1.4.0 adds ATS direct read).
 
 Tools:
   - hiring_signals (jobspy) — secondary boards (Indeed/LinkedIn/Glassdoor/ZR)
@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import Any
 
 import crm
-import prompts.module_14_hiring_signal as prompt
+import prompts.module_11_hiring_signal as prompt
 from tasks.base import DetectedEvent, Task, _today_header
 from tools.ats_fetcher import ATSFetcherTool
 from tools.base import Tool
@@ -32,8 +32,8 @@ _TIER_LABEL = {
 }
 
 
-class Module14HiringSignal(Task):
-    name = "module_14_hiring_signal"
+class Module11HiringSignal(Task):
+    name = "module_11_hiring_signal"
     section = "Overview"
     subsection = "Headcount"
     prompt_module = prompt
@@ -205,7 +205,7 @@ class Module14HiringSignal(Task):
             title = r.get("title") or ""
             if not title:
                 continue
-            sig = f"module_14:closed:{tier}:{title.lower()}"
+            sig = f"module_11:closed:{tier}:{title.lower()}"
             events.append(DetectedEvent(
                 account_page_id="",
                 module=self.name,
@@ -236,7 +236,7 @@ class Module14HiringSignal(Task):
                 # noisy for an alert (per Module 14's location-aware filter).
                 if r.get("in_scope") is not True:
                     continue
-                sig = f"module_14:open_tier1:{title.lower()}"
+                sig = f"module_11:open_tier1:{title.lower()}"
                 events.append(DetectedEvent(
                     account_page_id="",
                     module=self.name,

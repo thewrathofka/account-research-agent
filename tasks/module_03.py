@@ -35,7 +35,7 @@ _TIMING_PAIN_TAGS: dict[str, str] = {
 ANCHOR_MODULES: list[str] = [
     "module_01_gate",
     "module_02_revenue_model",
-    "module_12_competitor_snapshot",
+    "module_09_competitor_snapshot",
 ]
 
 

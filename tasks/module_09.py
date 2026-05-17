@@ -1,16 +1,16 @@
-"""Module 12 — Top 3 competitors. Output → Competitor Landscape page section."""
+"""Module 9 — Top 3 competitors. Output → Competitor Landscape page section."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import crm
-import prompts.module_12_competitor_snapshot as prompt
+import prompts.module_09_competitor_snapshot as prompt
 from tasks.base import Task
 
 
-class Module12CompetitorSnapshot(Task):
-    name = "module_12_competitor_snapshot"
+class Module09CompetitorSnapshot(Task):
+    name = "module_09_competitor_snapshot"
     section = "Competitor Landscape"
     subsection = None
     prompt_module = prompt

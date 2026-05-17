@@ -125,12 +125,12 @@ def test_parse_module_since_handles_empty() -> None:
 
 
 def test_parse_module_since_parses_pairs() -> None:
-    spec = "module_05_structural_news:1,module_06_trigger_events:1,module_14_hiring_signal:7"
+    spec = "module_05_structural_news:1,module_06_trigger_events:1,module_11_hiring_signal:7"
     out = _parse_module_since(spec)
     assert out == {
         "module_05_structural_news": 1,
         "module_06_trigger_events": 1,
-        "module_14_hiring_signal": 7,
+        "module_11_hiring_signal": 7,
     }
 
 

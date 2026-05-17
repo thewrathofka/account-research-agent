@@ -47,7 +47,7 @@ def _para(text: str) -> dict[str, Any]:
 def test_section_order_overview_first_competitor_last():
     """Top-level sections appear in the prescribed order regardless of task ordering."""
     results = [
-        _result("module_12_competitor_snapshot", "Competitor Landscape", None, [_para("comp")]),
+        _result("module_09_competitor_snapshot", "Competitor Landscape", None, [_para("comp")]),
         _result("module_02_revenue_model", "Overview", None, [_para("overview")]),
         _result("module_06_trigger_events", "News", None, [_para("news")]),
     ]
@@ -65,7 +65,7 @@ def test_subsection_grouping_overview_headcount():
     AFTER the main Overview content."""
     results = [
         _result("module_02_revenue_model", "Overview", None, [_para("revenue body")]),
-        _result("module_14_hiring_signal", "Overview", "Headcount",
+        _result("module_11_hiring_signal", "Overview", "Headcount",
                 [_para("47 open roles, 8 in creative")]),
     ]
     blocks = _research_section_blocks(results)

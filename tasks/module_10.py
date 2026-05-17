@@ -1,4 +1,4 @@
-"""Module 13 — Industry pulse (last 60 days).
+"""Module 10 — Industry pulse (last 60 days).
 
 When industry_movement_detected=true, appends `industry movement` to the agent-only
 Buying Signals multi-select (post-2026-05-11 role swap) and emits a per-signal
@@ -11,12 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 import crm
-import prompts.module_13_industry_pulse as prompt
+import prompts.module_10_industry_pulse as prompt
 from tasks.base import Task
 
 
-class Module13IndustryPulse(Task):
-    name = "module_13_industry_pulse"
+class Module10IndustryPulse(Task):
+    name = "module_10_industry_pulse"
     section = "Competitor Landscape"
     subsection = None
     prompt_module = prompt

@@ -307,7 +307,7 @@ def test_build_user_message_includes_raw_research_and_anchors() -> None:
             "primary_customer_segment": "Individual + small-business sellers",
             "sources": [],
         },
-        "module_12_competitor_snapshot": {
+        "module_09_competitor_snapshot": {
             "competitors": [{"name": "Meta Marketplace"}, {"name": "eBay"}],
             "sources": [],
         },
@@ -337,12 +337,12 @@ def test_build_user_message_excludes_mechanical_modules() -> None:
         "module_06_trigger_events": {"triggers_detected": ["funding round"]},
         "module_07_creative_reality": {"creative_posture_summary": "..."},
         "module_08_ad_library": {"platforms": [{"platform": "linkedin"}]},
-        "module_14_hiring_signal": {"headcount_signal": "downsizing"},
+        "module_11_hiring_signal": {"headcount_signal": "downsizing"},
     }
     msg = task.build_user_message("X", fake_context)
     for mechanical in ("module_05_structural_news", "module_06_trigger_events",
                        "module_07_creative_reality", "module_08_ad_library",
-                       "module_14_hiring_signal"):
+                       "module_11_hiring_signal"):
         assert f"### {mechanical}" not in msg, (
             f"Mechanical module {mechanical} leaked into module 4 prompt — "
             "v2.0.0 design explicitly excludes these."
@@ -386,5 +386,5 @@ def test_anchor_modules_excludes_mechanical_signal_modules() -> None:
     assert set(ANCHOR_MODULES) == {
         "module_01_gate",
         "module_02_revenue_model",
-        "module_12_competitor_snapshot",
+        "module_09_competitor_snapshot",
     }

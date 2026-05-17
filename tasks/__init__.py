@@ -17,9 +17,9 @@ from tasks.module_05 import Module05StructuralNews
 from tasks.module_06 import Module06TriggerEvents
 from tasks.module_07 import Module07CreativeReality
 from tasks.module_08 import Module08AdLibrary
-from tasks.module_12 import Module12CompetitorSnapshot
-from tasks.module_13 import Module13IndustryPulse
-from tasks.module_14 import Module14HiringSignal
+from tasks.module_09 import Module09CompetitorSnapshot
+from tasks.module_10 import Module10IndustryPulse
+from tasks.module_11 import Module11HiringSignal
 from tasks.research_pass import ResearchPass
 
 
@@ -34,9 +34,9 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "module_06_trigger_events": Module06TriggerEvents,
     "module_07_creative_reality": Module07CreativeReality,
     "module_08_ad_library": Module08AdLibrary,
-    "module_12_competitor_snapshot": Module12CompetitorSnapshot,
-    "module_13_industry_pulse": Module13IndustryPulse,
-    "module_14_hiring_signal": Module14HiringSignal,
+    "module_09_competitor_snapshot": Module09CompetitorSnapshot,
+    "module_10_industry_pulse": Module10IndustryPulse,
+    "module_11_hiring_signal": Module11HiringSignal,
 }
 
 # Phase 1 task set — passed by name to --tasks for the recommended monthly run.
@@ -53,9 +53,9 @@ PHASE1_TASKS = [
     "module_05_structural_news",
     "module_06_trigger_events",
     "module_07_creative_reality",
-    "module_12_competitor_snapshot",
-    "module_13_industry_pulse",
-    "module_14_hiring_signal",
+    "module_09_competitor_snapshot",
+    "module_10_industry_pulse",
+    "module_11_hiring_signal",
 ]
 
 # Phase 2 — module 10 (ad library) + module 4 (pain-point synthesis).
@@ -72,9 +72,9 @@ PHASE2_TASKS = [
     "module_06_trigger_events",
     "module_07_creative_reality",
     "module_08_ad_library",
-    "module_12_competitor_snapshot",
-    "module_13_industry_pulse",
-    "module_14_hiring_signal",
+    "module_09_competitor_snapshot",
+    "module_10_industry_pulse",
+    "module_11_hiring_signal",
     "module_03_pain_points",
 ]
 
@@ -100,15 +100,15 @@ DAILY_TASKS = [
     "research_pass",
     "module_05_structural_news",
     "module_06_trigger_events",
-    "module_14_hiring_signal",
+    "module_11_hiring_signal",
 ]
 
 # Weekly-tier: full ATS snapshot diff + category-level industry pulse.
 WEEKLY_TASKS = [
     "module_01_gate",
     "research_pass",
-    "module_13_industry_pulse",
-    "module_14_hiring_signal",
+    "module_10_industry_pulse",
+    "module_11_hiring_signal",
 ]
 
 # Monthly-tier: slow-moving creative posture + ad library + pain-point
@@ -131,7 +131,7 @@ QUARTERLY_TASKS = [
     "research_pass",
     "module_02_revenue_model",
     "module_04_corporate_structure",
-    "module_12_competitor_snapshot",
+    "module_09_competitor_snapshot",
 ]
 
 

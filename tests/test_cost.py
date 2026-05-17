@@ -287,7 +287,7 @@ def test_cost_summary_recognizes_tavily_432_in_errors(tmp_path) -> None:
         error="HTTPError: 432 Client Error:  for url: https://api.tavily.com/search",
     )
     _record_failed(
-        rl, account="B", task="module_14_hiring_signal",
+        rl, account="B", task="module_11_hiring_signal",
         error="HTTPError: 432 Client Error:  for url: https://api.tavily.com/search",
     )
     _record_failed(rl, account="C", task="bad", error="unrelated runtime error")

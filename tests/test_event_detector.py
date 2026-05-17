@@ -25,12 +25,12 @@ from tasks.module_03 import Module03PainPoints
 from tasks.module_04 import Module04CorporateStructure
 from tasks.module_05 import Module05StructuralNews
 from tasks.module_06 import Module06TriggerEvents
-from tasks.module_14 import Module14HiringSignal
+from tasks.module_11 import Module11HiringSignal
 
 
-# ---- Module 06 ----
+# ---- Module 05 (structural news; was module_06 pre-rename) ----
 
-def test_module_06_alerts_on_bankruptcy_transition():
+def test_module_05_alerts_on_bankruptcy_transition():
     task = Module05StructuralNews()
     prev = {"structure_note": None, "buying_implication": None, "confidence": "high"}
     curr = {
@@ -50,14 +50,14 @@ def test_module_06_alerts_on_bankruptcy_transition():
     assert "structure-ambiguous" in signals
 
 
-def test_module_06_no_alert_on_same_state():
+def test_module_05_no_alert_on_same_state():
     task = Module05StructuralNews()
     prev = {"structure_note": "mass layoffs", "event_date": "2026-04-01", "confidence": "medium"}
     curr = {"structure_note": "mass layoffs", "event_date": "2026-04-01", "confidence": "medium"}
     assert task.detect_events(prev, curr) == []
 
 
-def test_module_06_alerts_on_second_wave_with_later_date():
+def test_module_05_alerts_on_second_wave_with_later_date():
     """Same note, new event_date >=1 month later → second-wave alert."""
     task = Module05StructuralNews()
     prev = {"structure_note": "mass layoffs", "event_date": "2026-01-15", "confidence": "medium"}
@@ -67,7 +67,7 @@ def test_module_06_alerts_on_second_wave_with_later_date():
     assert any("second" in e.summary.lower() or "second wave" in e.summary.lower() for e in events)
 
 
-def test_module_06_alerts_on_confidence_regression():
+def test_module_05_alerts_on_confidence_regression():
     task = Module05StructuralNews()
     prev = {"structure_note": "recent IPO", "event_date": "2025-11-01", "confidence": "high"}
     curr = {"structure_note": "recent IPO", "event_date": "2025-11-01", "confidence": "low"}
@@ -76,13 +76,13 @@ def test_module_06_alerts_on_confidence_regression():
     assert any("confidence" in e.summary.lower() for e in events)
 
 
-def test_module_06_first_run_returns_empty():
+def test_module_05_first_run_returns_empty():
     """No prior_output → no events (alerts trigger on TRANSITIONS only)."""
     task = Module05StructuralNews()
     assert task.detect_events(None, {"structure_note": "bankruptcy"}) == []
 
 
-def test_module_06_alerts_on_buying_frozen_transition():
+def test_module_05_alerts_on_buying_frozen_transition():
     """buying_implication flipping to buying-frozen is a distinct alert path,
     even when structure_note doesn't change."""
     task = Module05StructuralNews()
@@ -94,7 +94,7 @@ def test_module_06_alerts_on_buying_frozen_transition():
 
 # ---- Module 07 ----
 
-def test_module_07_alerts_on_new_funding_round_even_with_same_tag():
+def test_module_06_alerts_on_new_funding_round_even_with_same_tag():
     """Two `funding round` tags in a row, different summaries — that's a second
     round and must fire a new alert. The naive tag-set diff would miss this."""
     task = Module06TriggerEvents()
@@ -120,7 +120,7 @@ def test_module_07_alerts_on_new_funding_round_even_with_same_tag():
     assert "Series B" in events[0].summary
 
 
-def test_module_07_alerts_on_agency_switch():
+def test_module_06_alerts_on_agency_switch():
     task = Module06TriggerEvents()
     prev = {"trigger_details": []}
     curr = {
@@ -134,7 +134,7 @@ def test_module_07_alerts_on_agency_switch():
     assert events[0].signal_type == "agency-switch"
 
 
-def test_module_07_no_alert_for_unmapped_trigger():
+def test_module_06_no_alert_for_unmapped_trigger():
     """Triggers outside _TRIGGER_TO_SIGNAL (rebrand/campaign, AI initiative)
     write to Buying Signals but do NOT fire Needs Attention alerts."""
     task = Module06TriggerEvents()
@@ -150,10 +150,10 @@ def test_module_07_no_alert_for_unmapped_trigger():
 
 # ---- Module 14 ----
 
-def test_module_14_alerts_on_tier1_role_closure():
+def test_module_11_alerts_on_tier1_role_closure():
     """Closed Tier 1 / Tier 2 important roles in curr_output fire an alert —
     company hired, team is in place, ramping creative ops."""
-    task = Module14HiringSignal()
+    task = Module11HiringSignal()
     prev = {"important_roles_open": [], "important_roles_recently_closed": []}
     curr = {
         "important_roles_open": [],
@@ -168,8 +168,8 @@ def test_module_14_alerts_on_tier1_role_closure():
     assert "Head of Creative AI" in events[0].summary
 
 
-def test_module_14_alerts_on_new_tier1_open_in_scope():
-    task = Module14HiringSignal()
+def test_module_11_alerts_on_new_tier1_open_in_scope():
+    task = Module11HiringSignal()
     prev = {
         "important_roles_open": [
             {"title": "Existing Role", "tier": "tier_1_marketing_ai", "in_scope": True},
@@ -191,9 +191,9 @@ def test_module_14_alerts_on_new_tier1_open_in_scope():
     assert "London" in events[0].summary
 
 
-def test_module_14_no_alert_on_out_of_scope_tier1_open():
+def test_module_11_no_alert_on_out_of_scope_tier1_open():
     """Out-of-scope Tier 1 opens (India, APAC) are too noisy for an alert."""
-    task = Module14HiringSignal()
+    task = Module11HiringSignal()
     prev = {"important_roles_open": [], "important_roles_recently_closed": []}
     curr = {
         "important_roles_open": [
@@ -207,7 +207,7 @@ def test_module_14_no_alert_on_out_of_scope_tier1_open():
 
 # ---- Module 05 ----
 
-def test_module_05_alerts_on_structure_type_change():
+def test_module_04_alerts_on_structure_type_change():
     task = Module04CorporateStructure()
     prev = {"structure_type": "standalone"}
     curr = {"structure_type": "subsidiary", "parent_company": "Acme Corp"}
@@ -217,16 +217,16 @@ def test_module_05_alerts_on_structure_type_change():
     assert "standalone" in events[0].summary and "subsidiary" in events[0].summary
 
 
-def test_module_05_no_alert_when_unchanged():
+def test_module_04_no_alert_when_unchanged():
     task = Module04CorporateStructure()
     prev = {"structure_type": "standalone"}
     curr = {"structure_type": "standalone"}
     assert task.detect_events(prev, curr) == []
 
 
-# ---- Module 04 ----
+# ---- Module 03 (pain_points; was module_04 pre-rename) ----
 
-def test_module_04_alerts_on_new_timing_pain_tag():
+def test_module_03_alerts_on_new_timing_pain_tag():
     task = Module03PainPoints()
     prev = {"tags": ["creative production", "strategy"]}
     curr = {"tags": ["creative production", "post-layoff overflow", "strategy"]}
@@ -236,14 +236,14 @@ def test_module_04_alerts_on_new_timing_pain_tag():
     assert "post-layoff overflow" in events[0].summary
 
 
-def test_module_04_no_alert_when_narrative_tag_already_present():
+def test_module_03_no_alert_when_narrative_tag_already_present():
     task = Module03PainPoints()
     prev = {"tags": ["post-layoff overflow", "creative production"]}
     curr = {"tags": ["post-layoff overflow", "strategy"]}
     assert task.detect_events(prev, curr) == []
 
 
-def test_module_04_no_alert_for_non_timing_tags():
+def test_module_03_no_alert_for_non_timing_tags():
     """Most pain tags are narrative; only the timing-shift ones alert."""
     task = Module03PainPoints()
     prev = {"tags": []}

@@ -21,7 +21,7 @@ import pytest
 import prompts.research_pass as research_prompt
 from run_log import ToolCallCache
 from tasks.module_08 import Module08AdLibrary
-from tasks.module_14 import Module14HiringSignal
+from tasks.module_11 import Module11HiringSignal
 from tools.apify_ad_scraper import (
     _advertiser_similarity,
     _build_actor_input,
@@ -402,10 +402,10 @@ def test_module_10_omits_unknown_kwargs() -> None:
 
 # ---- Module 14 surfaces greenhouse_slug ----
 
-def test_module_14_user_message_uses_research_pass_greenhouse_slug() -> None:
+def test_module_11_user_message_uses_research_pass_greenhouse_slug() -> None:
     """When research_pass provided a slug, the user message must instruct the
     model to pass it verbatim instead of letting ats_jobs guess."""
-    task = Module14HiringSignal()
+    task = Module11HiringSignal()
     ctx = {
         "module_01_gate": {"regions_present": ["USA"], "operates_in_na": True},
         "research_pass": {"greenhouse_slug": "alphasense"},
@@ -415,10 +415,10 @@ def test_module_14_user_message_uses_research_pass_greenhouse_slug() -> None:
     assert "confirmed by upstream research" in msg
 
 
-def test_module_14_user_message_falls_back_when_no_slug() -> None:
+def test_module_11_user_message_falls_back_when_no_slug() -> None:
     """When research_pass didn't surface a slug, fall back to the legacy
     heuristic-driven instruction (which is what we had before)."""
-    task = Module14HiringSignal()
+    task = Module11HiringSignal()
     ctx = {
         "module_01_gate": {"regions_present": ["USA"], "operates_in_na": True},
         "research_pass": {"greenhouse_slug": None},

@@ -19,11 +19,11 @@ Inputs (provided by tasks/module_03.py.build_user_message):
 - research_pass.raw_research            ← the narrative source (free text)
 - module_01_gate output                  ← regions_present anchor
 - module_02_revenue_model output         ← business model + customer segment
-- module_12_competitor_snapshot output   ← competitor names + differentiators
+- module_09_competitor_snapshot output   ← competitor names + differentiators
 
 Inputs that are deliberately NOT provided to this module:
 - module_05_structural_news, module_06_trigger_events, module_07_creative_reality,
-  module_08_ad_library, module_14_hiring_signal — those produce mechanical
+  module_08_ad_library, module_11_hiring_signal — those produce mechanical
   signals (layoffs, ad volume, hiring counts). Module 4's job is strategic
   narrative, not signal aggregation. Cross-referencing those is what the per-
   signal subsections under News already do.
