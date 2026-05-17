@@ -1,5 +1,11 @@
 # Account Research Agent — Pre-Lockdown Code Audit
 
+> **Numbering note (2026-05-17):** This audit references the pre-rename module
+> numbering (modules 3–14 with gaps at 2, 8, 11). Modules were renumbered
+> sequentially 1–11 on 2026-05-17. Old → new mapping: 3→2, 4→3, 5→4, 6→5,
+> 7→6, 9→7, 10→8, 12→9, 13→10, 14→11. See INVENTORY.md / CLAUDE.md for the
+> current numbering.
+
 Generated 2026-05-13 against commit `b65abe9`. Findings are prioritized by
 whether they could cause real production damage at 213-account scale.
 

@@ -38,16 +38,16 @@ this file if they ever diverge.
 1. `company_overview` (legacy)
 2. `research_pass`
 3. `module_01_gate` (gate, run-once)
-4. `module_03_revenue_model`
-5. `module_04_pain_points`
-6. `module_05_corporate_structure`
-7. `module_06_structural_news`
-8. `module_07_trigger_events`
-9. `module_09_creative_reality`
-10. `module_10_ad_library`
-11. `module_12_competitor_snapshot`
-12. `module_13_industry_pulse`
-13. `module_14_hiring_signal`
+4. `module_02_revenue_model`
+5. `module_03_pain_points`
+6. `module_04_corporate_structure`
+7. `module_05_structural_news`
+8. `module_06_trigger_events`
+9. `module_07_creative_reality`
+10. `module_08_ad_library`
+11. `module_09_competitor_snapshot`
+12. `module_10_industry_pulse`
+13. `module_11_hiring_signal`
 
 **`PHASE2_TASKS` execution order** (the recommended live order,
 `tasks/__init__.py:65`) — this is what actually runs end-to-end:
@@ -55,11 +55,11 @@ this file if they ever diverge.
 ```
 module_01_gate → research_pass → module_03 → module_05 → module_06 →
 module_07 → module_09 → module_10 → module_12 → module_13 → module_14 →
-module_04_pain_points
+module_03_pain_points
 ```
 
-Module 04 runs **last** because it synthesizes from `research_pass` +
-`module_01` + `module_03` + `module_12` (`tasks/module_04.py:27`,
+Module 03 (pain_points) runs **last** because it synthesizes from
+`research_pass` + `module_01` + `module_02` + `module_09` (`tasks/module_03.py:27`,
 `ANCHOR_MODULES`).
 
 **Gate halt.** `GATE_TASKS = {"module_01_gate"}` (`tasks/__init__.py:82`).
@@ -87,13 +87,13 @@ Across the 3 providers × 2 tiers there are 6 model configurations; each task's
 
 **Per-task tier assignment** (read from `Task.model_tier` class attribute,
 default `"smart"` from `tasks/base.py:109`):
-- **smart tier**: `research_pass`, `module_01_gate`, `module_09_creative_reality`,
-  `module_10_ad_library`, `module_14_hiring_signal` (all tool-using; default
+- **smart tier**: `research_pass`, `module_01_gate`, `module_07_creative_reality`,
+  `module_08_ad_library`, `module_11_hiring_signal` (all tool-using; default
   not overridden).
-- **fast tier**: `module_03_revenue_model`, `module_04_pain_points`,
-  `module_05_corporate_structure`, `module_06_structural_news`,
-  `module_07_trigger_events`, `module_12_competitor_snapshot`,
-  `module_13_industry_pulse` (`synthesis_only = True`; cost-cut on
+- **fast tier**: `module_02_revenue_model`, `module_03_pain_points`,
+  `module_04_corporate_structure`, `module_05_structural_news`,
+  `module_06_trigger_events`, `module_09_competitor_snapshot`,
+  `module_10_industry_pulse` (`synthesis_only = True`; cost-cut on
   2026-05-12).
 
 **Synthesis-only vs tool-using.** `Task.synthesis_only = True` → `max_iter = 1`,
@@ -111,12 +111,12 @@ Notion drifts.
 |---|---|---|---|---|
 | `Account Name` | title | (input only) | — | never (read only) |
 | `Size` | select | `module_01_gate` (`tasks/module_01.py:60`) | `<1000`, `1000-2000`, `2000-5000`, `5000+` | every successful gate; bucketed from integer estimate via `size_bucket()` |
-| `Buying Signals` | multi_select | `module_07` + `module_13` + `module_14` | `funding round`, `active creative jobs`, `rebrand/campaign`, `agency switch`, `AI initiative`, `industry movement`, `hiring`, `downsizing` (`crm.py:45`) | always present in payload — `writeback.build_property_payload` defaults to empty `multi_select` so stale tags clear on rerun (`writeback.py:144`) |
+| `Buying Signals` | multi_select | `module_06` + `module_10` + `module_11` | `funding round`, `active creative jobs`, `rebrand/campaign`, `agency switch`, `AI initiative`, `industry movement`, `hiring`, `downsizing` (`crm.py:45`) | always present in payload — `writeback.build_property_payload` defaults to empty `multi_select` so stale tags clear on rerun (`writeback.py:144`) |
 | `Buying Intent` | multi_select | — | (human-only) | **never written by agent** (2026-05-11 role swap; `crm.py:50`) |
-| `Pain Point Tags` | multi_select | `module_04_pain_points` (`tasks/module_04.py:101`) | `creative production`, `localization`, `new territory`, `strategy`, `audience education`, `competitive displacement`, `brand evolution`, `launch surge`, `AI receptivity`, `post-layoff overflow` (`crm.py:57`) | every M4 run (empty list valid → clears stale) |
-| `Structure Notes` | rich_text | `module_06_structural_news` (`tasks/module_06.py:20`) | constrained vocab: `recent IPO`, `about to IPO`, `merged with X`, `acquired X`, `acquired by X`, `mass layoffs`, `bankruptcy`, `split from X`, `buying-frozen`, `buying-friendly`, `out of business` | only when `structure_note` is non-null; merge strategy = append with ` · ` separator (`writeback.py:88`) |
-| `Parent` | rich_text | `module_05_corporate_structure` (`tasks/module_05.py:22`) | — | written when `structure_type == "subsidiary"` (parent name) OR when company is itself a parent / has notable child brands (writes own `_account_name`); skipped for standalone-no-children |
-| `sister/child` | rich_text | `module_05_corporate_structure` | — | written when `notable_sister_or_child_brands` is non-empty (comma-joined) |
+| `Pain Point Tags` | multi_select | `module_03_pain_points` (`tasks/module_03.py:101`) | `creative production`, `localization`, `new territory`, `strategy`, `audience education`, `competitive displacement`, `brand evolution`, `launch surge`, `AI receptivity`, `post-layoff overflow` (`crm.py:57`) | every M4 run (empty list valid → clears stale) |
+| `Structure Notes` | rich_text | `module_05_structural_news` (`tasks/module_05.py:20`) | constrained vocab: `recent IPO`, `about to IPO`, `merged with X`, `acquired X`, `acquired by X`, `mass layoffs`, `bankruptcy`, `split from X`, `buying-frozen`, `buying-friendly`, `out of business` | only when `structure_note` is non-null; merge strategy = append with ` · ` separator (`writeback.py:88`) |
+| `Parent` | rich_text | `module_04_corporate_structure` (`tasks/module_04.py:22`) | — | written when `structure_type == "subsidiary"` (parent name) OR when company is itself a parent / has notable child brands (writes own `_account_name`); skipped for standalone-no-children |
+| `sister/child` | rich_text | `module_04_corporate_structure` | — | written when `notable_sister_or_child_brands` is non-empty (comma-joined) |
 | `Last Researched` | date | (agent metadata) | — | written in `build_completion_payload` after page body succeeds (`writeback.py:148`) |
 | `Research Confidence` | select | (agent metadata) | `high`, `medium`, `low`, `failed` (downgraded to `low` if `failed`) | written in `build_completion_payload` |
 | `Research Status` | select | `module_01_gate` (gate failure → `out_of_scope`) + metadata derivation | `pending`, `done`, `needs_review`, `failed`, `out_of_scope` | written in `build_completion_payload`; merge strategy = `merge_status_priority` (severity wins, `writeback.py:73`) |
@@ -142,17 +142,17 @@ Headings are emitted in order by `_research_section_blocks` in
 1. **heading_2** `Research — YYYY-MM-DD[ — <label>]` (`crm.build_section_heading_text`, `crm.py:105`)
 2. **heading_3 `Overview`**
    - `module_01_gate` paragraph (size band · employee count · regions)
-   - `module_03_revenue_model` paragraph (summary)
-   - `module_05_corporate_structure` paragraph
-   - **heading_3 `Overview — Headcount`** → `module_14_hiring_signal` summary + important-roles bullets (dynamic; refreshed per cadence)
-3. **heading_3 `Possible Pain Points`** → `module_04_pain_points` (intro paragraph + per-pain bullets + `Pain tags: …` bullet)
+   - `module_02_revenue_model` paragraph (summary)
+   - `module_04_corporate_structure` paragraph
+   - **heading_3 `Overview — Headcount`** → `module_11_hiring_signal` summary + important-roles bullets (dynamic; refreshed per cadence)
+3. **heading_3 `Possible Pain Points`** → `module_03_pain_points` (intro paragraph + per-pain bullets + `Pain tags: …` bullet)
 4. **heading_3 `News`**
-   - `module_06_structural_news` paragraph
-   - `module_07_trigger_events` paragraph + per-trigger bullets
+   - `module_05_structural_news` paragraph
+   - `module_06_trigger_events` paragraph + per-trigger bullets
    - One nested `heading_3` per detected Buying Signal tag (e.g. `funding round`, `industry movement`, `hiring`, `downsizing`) emitted from `TaskResult.signal_sections` — each with a logic paragraph + `Sources:` paragraph + URL bullets
-5. **heading_3 `Creative Posture`** → `module_09_creative_reality` summary + agency bullet + JD-pain-phrase bullets
-   - **heading_3 `Creative Posture — Ads Running`** → `module_10_ad_library` per-platform bullets (with `provenance` nested-bullet diagnostics)
-6. **heading_3 `Competitor Landscape`** → `module_12_competitor_snapshot` paragraph + per-competitor bullets, then `module_13_industry_pulse` headline bullets
+5. **heading_3 `Creative Posture`** → `module_07_creative_reality` summary + agency bullet + JD-pain-phrase bullets
+   - **heading_3 `Creative Posture — Ads Running`** → `module_08_ad_library` per-platform bullets (with `provenance` nested-bullet diagnostics)
+6. **heading_3 `Competitor Landscape`** → `module_09_competitor_snapshot` paragraph + per-competitor bullets, then `module_10_industry_pulse` headline bullets
 7. **divider**
 
 Inline `[N]` citations are clickable links via `_rewrite_block_citation_markers`
@@ -186,7 +186,7 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** Overview paragraph — `Size band: <bucket> · ~<N> employees · Operations in <regions>`. On gate failure → `Out of scope: <reason>`.
 - **Quirks:** there is intentionally NO `Employee Count` number property — the integer lives in `output_json` only.
 
-### `module_03_revenue_model` (v1.2.0)
+### `module_02_revenue_model` (v1.2.0)
 - **Purpose:** revenue model + customer segment + primary products as a 2-3 sentence Overview paragraph.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast (Haiku).
@@ -196,7 +196,7 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** one paragraph under Overview, with `[N]` citation markers.
 - **Quirks:** if private + unclear → `Unclear from public sources` + `confidence="low"`.
 
-### `module_05_corporate_structure` (v1.3.0)
+### `module_04_corporate_structure` (v1.3.0)
 - **Purpose:** classify standalone vs subsidiary vs parent; capture PE owner + sister/child brands.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast.
@@ -208,7 +208,7 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** one Overview paragraph (`Corporate structure: <type>. PE owner: <X>. Notable brands: <list>.`).
 - **Quirks:** prompt v1.3.0 enforces that any non-empty `notable_sister_or_child_brands` forces `structure_type="parent"` (fields cannot disagree).
 
-### `module_06_structural_news` (v1.5.0)
+### `module_05_structural_news` (v1.5.0)
 - **Purpose:** last-6/12mo structural events (M&A, IPO, layoffs, bankruptcy) → constrained-vocab `Structure Notes` property + News paragraph.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast.
@@ -218,7 +218,7 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** News paragraph `<Title>: <summary> (<date>) — <implication>`.
 - **Quirks:** v1.4.0+ hardens placeholder substitution (must write actual counterparty name); v1.5.0 adds tiered recency (12mo for big events, 6mo otherwise) and absolute-date YYYY-MM-DD requirement.
 
-### `module_07_trigger_events` (v1.5.0)
+### `module_06_trigger_events` (v1.5.0)
 - **Purpose:** detect trigger events in last 90 days; tag `Buying Signals` + render News bullets + signal subsections.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast.
@@ -226,10 +226,10 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Output:** `triggers_detected` (subset of: `funding round`, `active creative jobs`, `rebrand/campaign`, `agency switch`, `AI initiative`), `trigger_details[{trigger, summary, url}]`, `citations`, `sources`, `confidence`.
 - **Writes to Notion (properties):** `Buying Signals` multi-select with the detected triggers, filtered against `BUYING_SIGNAL_OPTIONS`.
 - **Page body:** "Buying signals (last 90 days):" paragraph + one bullet per trigger.
-- **Signal sections:** one entry per trigger via `to_signal_sections` (`tasks/module_07.py:54`).
+- **Signal sections:** one entry per trigger via `to_signal_sections` (`tasks/module_06.py:54`).
 - **Quirks:** "active creative jobs" only fires on a press release / announcement, not routine listings (those are M14's job).
 
-### `module_09_creative_reality` (v1.3.0)
+### `module_07_creative_reality` (v1.3.0)
 - **Purpose:** mine active JDs for creative-pain phrases + named agency partners.
 - **Tools:** `hiring_signals` (jobspy), `web_search` (Tavily).
 - **Model tier:** smart.
@@ -239,17 +239,17 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** Creative Posture paragraph (summary) + bullet `Named agency partners: …` + `Pain phrases from active JDs:` paragraph + one bullet per phrase.
 - **Quirks:** `named_agencies` must be press-confirmed or company-claimed only.
 
-### `module_10_ad_library` (v1.3.0)
+### `module_08_ad_library` (v1.3.0)
 - **Purpose:** ad-library presence on LinkedIn (always), Meta (gated by B2C/DTC classification), TikTok (gated by Gen-Z/lifestyle classification).
 - **Tools:** `apify_ad_scraper`.
 - **Model tier:** smart.
-- **Inputs:** `research_pass` (raw_research excerpt + canonical URLs), `module_03_revenue_model.primary_customer_segment`, `module_09_creative_reality.named_agencies`.
+- **Inputs:** `research_pass` (raw_research excerpt + canonical URLs), `module_02_revenue_model.primary_customer_segment`, `module_07_creative_reality.named_agencies`.
 - **Output:** `audience_classification{primary (B2B|B2C|hybrid), is_gen_z_lifestyle, rationale}`, `platforms[{platform (linkedin|meta|tiktok), ads_running, volume (none|low|medium|high), format_mix?, note, provenance?{match_mode, filtered_out, url_boosted}}]` (exactly 3 items), `citations`, `sources`, `confidence`.
 - **Writes to Notion:** none.
 - **Page body:** under "Creative Posture — Ads Running" subsection, one bullet per platform: `<platform>: <count> ads (<volume> volume) — <format_mix>. <note>` + nested provenance child bullet `match_mode: X · filtered_out: N · url_boosted: N`.
 - **Quirks:** v1.3.0 prompt requires the model to echo Apify tool diagnostics through verbatim. v5 of the Apify tool: canonical URL is a *filter booster* (URL-matched items bypass advertiser-name Jaccard threshold of 0.5), not a search override.
 
-### `module_12_competitor_snapshot` (v1.2.0)
+### `module_09_competitor_snapshot` (v1.2.0)
 - **Purpose:** top 3 direct competitors + positioning differentiator each.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast.
@@ -259,7 +259,7 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** Competitor Landscape paragraph `Top direct competitors: …` + one bullet per competitor.
 - **Quirks:** if fewer than 3 clear competitors, prompt instructs fill with closest matches + `confidence="low"`.
 
-### `module_13_industry_pulse` (v1.4.0)
+### `module_10_industry_pulse` (v1.4.0)
 - **Purpose:** 2-3 last-90d category-level stories; may trigger `industry movement` Buying Signal.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast.
@@ -270,25 +270,25 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Signal sections:** when triggered, one entry `{signal: "industry movement", logic, sources}`.
 - **Quirks:** v1.4.0 expanded window 60d→90d and tightened relevance filter.
 
-### `module_14_hiring_signal` (v1.5.0)
+### `module_11_hiring_signal` (v1.5.0)
 - **Purpose:** hiring/downsizing classification with location-aware in-scope counting + important-role open/close diff.
 - **Tools:** `hiring_signals` (jobspy), `ats_jobs` (Greenhouse), `web_search` (Tavily, layoff news only).
 - **Model tier:** smart.
-- **Inputs:** `module_01_gate` (regions_present, employee_count_estimate), `module_06_structural_news` (layoff event context), `research_pass` (greenhouse_slug).
+- **Inputs:** `module_01_gate` (regions_present, employee_count_estimate), `module_05_structural_news` (layoff event context), `research_pass` (greenhouse_slug).
 - **Output:** `active_open_roles_total`, `creative_marketing_roles_count`, `creative_marketing_roles_in_scope_count`, `creative_marketing_role_titles?`, `recent_layoffs_detected`, `layoff_summary?`, `headcount_signal?` (enum: `hiring|downsizing|null`), `headcount_summary`, `important_roles_open?[{title, tier, url?, location?, in_scope?}]`, `important_roles_recently_closed?[{title, tier}]`, `citations`, `sources`, `confidence`. `tier` enum: `tier_1_marketing_ai`, `tier_2_senior_leadership`, `tier_3_senior_creative_ic`.
 - **Writes to Notion (properties):** `Buying Signals` adds `hiring` or `downsizing` (single value) when `headcount_signal` is set.
 - **Page body:** under "Overview — Headcount" subsection: summary paragraph + `Important roles currently open (N — X in UK/EU/NA, Y elsewhere, Z unknown):` paragraph + up to 10 role bullets + `Important roles closed since previous research run (N) — recent closure may indicate the team is now in place...:` paragraph + closed-role bullets.
 - **Quirks:** the `hiring` Buying Signal triggers iff `creative_marketing_roles_in_scope_count >= 3` (UK + EU + NA only). Out-of-scope creative hiring appears in headcount page body for context but doesn't fire the signal. ATS snapshot diff is persisted in `runs.db` via `ATSSnapshotStore`. Greenhouse-only today.
 
-### `module_04_pain_points` (v3.0.0)
+### `module_03_pain_points` (v3.0.0)
 - **Purpose:** strategic analyst's-brief — intro line + 2-5 named pain bullets + 2-5 tags.
 - **Tools:** none (synthesis-only).
 - **Model tier:** fast.
-- **Inputs:** `research_pass.raw_research` + `ANCHOR_MODULES = ["module_01_gate", "module_03_revenue_model", "module_12_competitor_snapshot"]`. **Deliberately NOT given** the mechanical-signal modules (06/07/09/10/14) — those have their own page-body sections + signal subsections.
+- **Inputs:** `research_pass.raw_research` + `ANCHOR_MODULES = ["module_01_gate", "module_02_revenue_model", "module_09_competitor_snapshot"]`. **Deliberately NOT given** the mechanical-signal modules (05/06/07/08/11) — those have their own page-body sections + signal subsections.
 - **Output:** `intro` (≥10 chars), `pain_points[{label, body}]` (1-5), `tags` (subset of `PAIN_POINT_TAG_OPTIONS`, 0-5), `citations`, `sources`, `confidence`.
 - **Writes to Notion (properties):** `Pain Point Tags` multi-select with validated tags (empty multi_select clears stale tags).
 - **Page body:** "Possible Pain Points" section: intro paragraph + one bullet per pain (`<label> — <body>`) + `Pain tags: tag1 · tag2 · …` bullet.
-- **Quirks:** v3.0.0 (2026-05-12) replaces v2.x narrative paragraphs with bullets for 10-second scannability. v2.x cached outputs with a `narrative` field still render as paragraphs (backwards-compat path at `tasks/module_04.py:136`).
+- **Quirks:** v3.0.0 (2026-05-12) replaces v2.x narrative paragraphs with bullets for 10-second scannability. v2.x cached outputs with a `narrative` field still render as paragraphs (backwards-compat path at `tasks/module_03.py:136`).
 
 ---
 
