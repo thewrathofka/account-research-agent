@@ -1,6 +1,6 @@
 name: Daily news (Priority A)
 
-# Phase D — daily cadence. Polls modules 06/07/14 on Priority A accounts only
+# Phase D — daily cadence. Polls modules 05/06/11 on Priority A accounts only
 # (~10-15 accounts, ~$0.13/account/day projected = ~$20-40/month). News and
 # trigger events have the shortest sales-relevance window — daily catches
 # bankruptcy / layoffs / funding / agency-switch / Tier-1 senior hire within
@@ -39,6 +39,6 @@ jobs:
         run: |
           python account_research_agent.py \
             --priority "Priority A" \
-            --tasks module_01_gate,research_pass,module_06_structural_news,module_07_trigger_events,module_14_hiring_signal \
-            --module-since "module_06_structural_news:1,module_07_trigger_events:1,module_14_hiring_signal:1" \
+            --tasks module_01_gate,research_pass,module_05_structural_news,module_06_trigger_events,module_11_hiring_signal \
+            --module-since "module_05_structural_news:1,module_06_trigger_events:1,module_11_hiring_signal:1" \
             --cost-summary

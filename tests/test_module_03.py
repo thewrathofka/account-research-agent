@@ -1,4 +1,4 @@
-"""Tests for module_04 (strategic narrative + pain tags) — v2.0.0."""
+"""Tests for module_03 (strategic narrative + pain tags) — v2.0.0."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import jsonschema
 import pytest
 
 import crm
-import prompts.module_04_pain_points as prompt
-from tasks.module_04 import ANCHOR_MODULES, Module04PainPoints
+import prompts.module_03_pain_points as prompt
+from tasks.module_03 import ANCHOR_MODULES, Module03PainPoints
 
 
 # ---- vocabulary ----
@@ -120,19 +120,19 @@ def test_schema_rejects_citation_missing_url() -> None:
 # ---- task class ----
 
 def test_task_synthesis_only() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     assert task.synthesis_only is True
     assert task.build_tools() == []
 
 
 def test_task_section_targets_possible_pain_points() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     assert task.section == "Possible Pain Points"
     assert task.subsection is None
 
 
 def test_task_to_fields_writes_pain_point_tags() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "tags": ["audience education", "localization", "new territory"],
     }
@@ -144,7 +144,7 @@ def test_task_to_fields_writes_pain_point_tags() -> None:
 
 def test_task_to_fields_filters_unknown_tags() -> None:
     """Stray labels from the model are dropped, not exception-raised."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {"tags": ["localization", "vibes_based_tag", "creative production"]}
     fields = task.to_fields(out)
     names = [item["name"] for item in fields[crm.PROP_PAIN_POINT_TAGS]["multi_select"]]
@@ -154,13 +154,13 @@ def test_task_to_fields_filters_unknown_tags() -> None:
 def test_task_to_fields_emits_empty_multiselect_when_no_tags() -> None:
     """Empty multi_select overwrites stale tags from prior runs (same contract
     as Buying Signals)."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     fields = task.to_fields({"tags": []})
     assert fields == {crm.PROP_PAIN_POINT_TAGS: {"multi_select": []}}
 
 
 def test_task_to_blocks_emits_intro_paragraph_then_pain_bullets_then_tag_bullet() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "intro": "Acme is mid-pivot to enterprise AI.",
         "pain_points": [
@@ -189,7 +189,7 @@ def test_task_to_blocks_emits_intro_paragraph_then_pain_bullets_then_tag_bullet(
 def test_to_blocks_keeps_citation_markers_as_plain_text() -> None:
     """Module 4 emits `[N]` markers as plain text — the orchestrator handles
     renumbering + link rendering per-section. The task itself stays simple."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "intro": "Oracle is shifting toward AI infrastructure [1].",
         "pain_points": [
@@ -217,7 +217,7 @@ def test_to_blocks_omits_footnote_bullets_module_side() -> None:
     """Module 4 must not emit its own footnote bullets — the orchestrator
     handles per-section citation footnotes, so duplicating here would render
     the bullets twice on the page."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "intro": "Intro with [1].",
         "pain_points": [{"label": "Pain", "body": "Body claim [2]."}],
@@ -234,7 +234,7 @@ def test_to_blocks_omits_footnote_bullets_module_side() -> None:
 
 
 def test_task_to_blocks_drops_unknown_tags_from_bullet() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "intro": "x" * 30,
         "pain_points": [{"label": "Pain", "body": "Body sentence " * 3}],
@@ -247,7 +247,7 @@ def test_task_to_blocks_drops_unknown_tags_from_bullet() -> None:
 
 
 def test_task_to_blocks_omits_tag_bullet_when_no_valid_tags() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "intro": "x" * 30,
         "pain_points": [{"label": "Pain", "body": "Body sentence " * 3}],
@@ -262,7 +262,7 @@ def test_task_to_blocks_omits_tag_bullet_when_no_valid_tags() -> None:
 
 
 def test_task_to_blocks_empty_input_returns_explainer() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     blocks = task.to_blocks({"intro": "", "pain_points": [], "tags": []})
     assert len(blocks) == 1
     text = blocks[0]["paragraph"]["rich_text"][0]["text"]["content"]
@@ -273,7 +273,7 @@ def test_task_to_blocks_back_compat_with_v2_narrative_cache() -> None:
     """If runs.db has a cached v2.x output (narrative string instead of
     intro+pain_points), to_blocks falls back to rendering the narrative as
     paragraphs so old cached entries don't crash."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     out = {
         "narrative": "Paragraph one about positioning.\n\nParagraph two about growth.",
         "tags": ["strategy"],
@@ -285,14 +285,14 @@ def test_task_to_blocks_back_compat_with_v2_narrative_cache() -> None:
 
 def test_task_to_signal_sections_empty() -> None:
     """Module 4 doesn't contribute Buying Signals tags."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     assert task.to_signal_sections({"intro": "x", "pain_points": [], "tags": []}) == []
 
 
 # ---- build_user_message ----
 
 def test_build_user_message_includes_raw_research_and_anchors() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     fake_context = {
         "research_pass": {
             "raw_research": "TBAuction is an auction platform competing with Meta Marketplace...",
@@ -302,12 +302,12 @@ def test_build_user_message_includes_raw_research_and_anchors() -> None:
             "size_band": "1000-2000", "regions_present": ["Netherlands", "Italy"],
             "sources": ["https://gate.example.com"],
         },
-        "module_03_revenue_model": {
+        "module_02_revenue_model": {
             "revenue_model": "Transaction fees on auctions",
             "primary_customer_segment": "Individual + small-business sellers",
             "sources": [],
         },
-        "module_12_competitor_snapshot": {
+        "module_09_competitor_snapshot": {
             "competitors": [{"name": "Meta Marketplace"}, {"name": "eBay"}],
             "sources": [],
         },
@@ -328,21 +328,21 @@ def test_build_user_message_includes_raw_research_and_anchors() -> None:
 def test_build_user_message_excludes_mechanical_modules() -> None:
     """The mechanical signal modules (06/07/09/10/14) must NOT appear in the
     prompt — that's the whole point of the v2.0.0 redesign."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     fake_context = {
         "research_pass": {"raw_research": "x", "sources": []},
         "module_01_gate": {"regions_present": ["USA"]},
         # Even if these are in the envelope, the prompt must not embed them:
-        "module_06_structural_news": {"structure_note": "mass layoffs"},
-        "module_07_trigger_events": {"triggers_detected": ["funding round"]},
-        "module_09_creative_reality": {"creative_posture_summary": "..."},
-        "module_10_ad_library": {"platforms": [{"platform": "linkedin"}]},
-        "module_14_hiring_signal": {"headcount_signal": "downsizing"},
+        "module_05_structural_news": {"structure_note": "mass layoffs"},
+        "module_06_trigger_events": {"triggers_detected": ["funding round"]},
+        "module_07_creative_reality": {"creative_posture_summary": "..."},
+        "module_08_ad_library": {"platforms": [{"platform": "linkedin"}]},
+        "module_11_hiring_signal": {"headcount_signal": "downsizing"},
     }
     msg = task.build_user_message("X", fake_context)
-    for mechanical in ("module_06_structural_news", "module_07_trigger_events",
-                       "module_09_creative_reality", "module_10_ad_library",
-                       "module_14_hiring_signal"):
+    for mechanical in ("module_05_structural_news", "module_06_trigger_events",
+                       "module_07_creative_reality", "module_08_ad_library",
+                       "module_11_hiring_signal"):
         assert f"### {mechanical}" not in msg, (
             f"Mechanical module {mechanical} leaked into module 4 prompt — "
             "v2.0.0 design explicitly excludes these."
@@ -350,7 +350,7 @@ def test_build_user_message_excludes_mechanical_modules() -> None:
 
 
 def test_build_user_message_handles_missing_research_pass() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     msg = task.build_user_message("X", {})
     # Should still build (degraded path)
     assert "X" in msg
@@ -358,7 +358,7 @@ def test_build_user_message_handles_missing_research_pass() -> None:
 
 
 def test_build_user_message_handles_missing_anchors() -> None:
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     msg = task.build_user_message("X", {"research_pass": {"raw_research": "...", "sources": []}})
     # All anchor modules render as "(not run or no output)" when absent
     for mod in ANCHOR_MODULES:
@@ -372,12 +372,12 @@ def test_task_registered_in_phase2_after_dependencies() -> None:
     """Module 04 must be LAST in PHASE2_TASKS, and the 3 anchor deps must
     appear earlier so the context envelope has their outputs."""
     from tasks import PHASE2_TASKS
-    assert PHASE2_TASKS[-1] == "module_04_pain_points"
-    pos_04 = PHASE2_TASKS.index("module_04_pain_points")
+    assert PHASE2_TASKS[-1] == "module_03_pain_points"
+    pos_04 = PHASE2_TASKS.index("module_03_pain_points")
     for anchor in ANCHOR_MODULES:
         assert anchor in PHASE2_TASKS, f"{anchor} missing from PHASE2_TASKS"
         assert PHASE2_TASKS.index(anchor) < pos_04, (
-            f"{anchor} runs AFTER module_04 — context envelope won't have its output"
+            f"{anchor} runs AFTER module_03_pain_points — context envelope won't have its output"
         )
 
 
@@ -385,6 +385,6 @@ def test_anchor_modules_excludes_mechanical_signal_modules() -> None:
     """v2.0.0 contract: only the 3 light anchors, no mechanical signals."""
     assert set(ANCHOR_MODULES) == {
         "module_01_gate",
-        "module_03_revenue_model",
-        "module_12_competitor_snapshot",
+        "module_02_revenue_model",
+        "module_09_competitor_snapshot",
     }

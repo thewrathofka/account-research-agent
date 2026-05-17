@@ -92,7 +92,7 @@ def run_batch(
     # we're actually about to execute. The bucket order (gate+research →
     # synthesis → tool-using post) is correct because downstream tasks read
     # from upstream context, but a silent reorder could mask a misconfigured
-    # task list (e.g. the user thinks they're running module_04 first).
+    # task list (e.g. the user thinks they're running module_03 first).
     execution_order = pre_batch_names + batchable_names + post_batch_names
     if execution_order != task_names:
         log.warning(

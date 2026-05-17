@@ -100,16 +100,16 @@ MAX_APIFY_RESULTS_PER_PLATFORM = 50
 MAX_COST: dict[str, float] = {
     "module_01_gate": 0.04,
     "research_pass": 0.06,
-    "module_03_revenue_model": 0.02,
-    "module_05_corporate_structure": 0.02,
-    "module_06_structural_news": 0.02,
-    "module_07_trigger_events": 0.03,
-    "module_09_creative_reality": 0.05,
-    "module_12_competitor_snapshot": 0.02,
-    "module_13_industry_pulse": 0.02,
-    "module_14_hiring_signal": 0.05,
-    "module_10_ad_library": 0.06,  # Phase 2 — token cost; Apify tool cost separate
-    "module_04_pain_points": 0.04,  # Phase 2b — synthesis-only, single LLM call
+    "module_02_revenue_model": 0.02,
+    "module_04_corporate_structure": 0.02,
+    "module_05_structural_news": 0.02,
+    "module_06_trigger_events": 0.03,
+    "module_07_creative_reality": 0.05,
+    "module_09_competitor_snapshot": 0.02,
+    "module_10_industry_pulse": 0.02,
+    "module_11_hiring_signal": 0.05,
+    "module_08_ad_library": 0.06,  # Phase 2 — token cost; Apify tool cost separate
+    "module_03_pain_points": 0.04,  # Phase 2b — synthesis-only, single LLM call
     "company_overview": 0.04,
     "_account_total": 0.40,  # ceiling per account across all tasks (bumped for modules 4 + 10)
 }

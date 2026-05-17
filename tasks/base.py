@@ -74,7 +74,7 @@ class DetectedEvent:
 
     Fields:
     - account_page_id: which Notion page the alert is for
-    - module: the task that detected the transition (e.g. "module_06_structural_news")
+    - module: the task that detected the transition (e.g. "module_05_structural_news")
     - signal_type: short tag matching crm.NEEDS_ATTENTION_OPTIONS (e.g. "bankruptcy")
     - summary: 1-2 sentence human-readable description of what changed
     - source_url: optional canonical source for the alert (often a citation URL)
@@ -139,6 +139,12 @@ class Task:
     # LLM call. Use for tasks whose source material is fully derivable from the
     # shared research context. Saves ~50-70% per task vs the full agent loop.
     synthesis_only: bool = False
+
+    # If True, the orchestrator skips this task on every cadence run after its
+    # first non-error success for a given account, replaying the cached
+    # output_json from runs.db. Use for one-time gates (e.g. size, persona
+    # headcount) — facts that don't drift account-by-account once established.
+    run_once: bool = False
 
     def build_tools(self) -> list[Tool]:
         """Return fresh Tool instances for this run (per-task call counters)."""
@@ -338,8 +344,9 @@ class Task:
         # Inject the canonical Notion account name as ephemeral context for the
         # to_* hooks. Popped before result construction so it never lands in
         # the run log's output_json or in downstream task context envelopes.
-        # Used by module_05 to write the Notion `Parent` property as the
-        # account's own name when structure_type == "parent".
+        # Used by module_04 (corporate structure) to write the Notion
+        # `Parent` property as the account's own name when
+        # structure_type == "parent".
         output["_account_name"] = account_name
         fields = self.to_fields(output)
         page_blocks = self.to_blocks(output)

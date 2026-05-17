@@ -1,5 +1,11 @@
 # 2026-05-09 — Fix Appendix Implementation Session
 
+> **Numbering note (2026-05-17):** This session log references the
+> pre-rename module numbering (modules 3–14 with gaps). Modules were
+> renumbered sequentially 1–11 on 2026-05-17. Old → new mapping: 3→2, 4→3,
+> 5→4, 6→5, 7→6, 9→7, 10→8, 12→9, 13→10, 14→11. See INVENTORY.md for the
+> current numbering.
+
 A working log of everything implemented in one session against the
 `booklet_fix_appendix.pdf` recommendations, three follow-up corrections
 discovered while live-testing, and an open bug to ship next time.

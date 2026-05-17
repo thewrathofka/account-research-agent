@@ -6,8 +6,8 @@ Covers:
 - Orchestrator injects the prior output into the context envelope when skipping
   (so downstream tasks that read the upstream module still see its data).
 - Orchestrator runs the task when stale OR when no prior row exists.
-- Module 14 (which reads module_06 context) still gets its context when module_06
-  is skipped on freshness.
+- Module 11 (hiring_signal, which reads module_05_structural_news context) still
+  gets its context when module_05 is skipped on freshness.
 """
 
 from __future__ import annotations
@@ -38,20 +38,20 @@ def test_latest_successful_runs_returns_most_recent_per_pair(tmp_path) -> None:
     rl = RunLog(tmp_path / "runs.db")
     now = datetime.now(timezone.utc)
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(days=3)), completed_at=_iso(now - timedelta(days=3)),
         status="success", confidence="medium",
         output_json='{"structure_note":null,"confidence":"medium"}',
     ))
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(hours=1)), completed_at=_iso(now - timedelta(hours=1)),
         status="success", confidence="high",
         output_json='{"structure_note":"recent IPO","confidence":"high"}',
     ))
     result = rl.latest_successful_runs(["p1"])
-    assert ("p1", "module_06_structural_news") in result
-    row = result[("p1", "module_06_structural_news")]
+    assert ("p1", "module_05_structural_news") in result
+    row = result[("p1", "module_05_structural_news")]
     assert row["confidence"] == "high"
     assert '"recent IPO"' in row["output_json"]
 
@@ -60,20 +60,20 @@ def test_latest_successful_runs_excludes_failed_status(tmp_path) -> None:
     rl = RunLog(tmp_path / "runs.db")
     now = datetime.now(timezone.utc)
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(days=3)), completed_at=_iso(now - timedelta(days=3)),
         status="success", confidence="medium",
         output_json='{"x":1}',
     ))
     # Newer failed row — should not be returned.
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(hours=1)), completed_at=_iso(now - timedelta(hours=1)),
         status="failed", confidence="failed",
         error="boom",
     ))
     result = rl.latest_successful_runs(["p1"])
-    row = result[("p1", "module_06_structural_news")]
+    row = result[("p1", "module_05_structural_news")]
     # MAX(started_at) returns the failed row's timestamp because the GROUP BY
     # uses the filtered row set — we want the successful one's timestamp.
     assert '"x":1' in row["output_json"]
@@ -85,18 +85,18 @@ def test_latest_successful_runs_excludes_confidence_failed(tmp_path) -> None:
     rl = RunLog(tmp_path / "runs.db")
     now = datetime.now(timezone.utc)
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(days=3)), completed_at=_iso(now - timedelta(days=3)),
         status="success", confidence="medium", output_json='{"x":1}',
     ))
     # Newer success/confidence=failed — exclude.
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(hours=1)), completed_at=_iso(now - timedelta(hours=1)),
         status="success", confidence="failed", output_json="null",
     ))
     result = rl.latest_successful_runs(["p1"])
-    row = result[("p1", "module_06_structural_news")]
+    row = result[("p1", "module_05_structural_news")]
     assert '"x":1' in row["output_json"]
 
 
@@ -104,12 +104,12 @@ def test_latest_successful_runs_excludes_dry_run_rows(tmp_path) -> None:
     rl = RunLog(tmp_path / "runs.db")
     now = datetime.now(timezone.utc)
     rl.record(RunRecord(
-        account_page_id="p1", account_name="A", task_name="module_06_structural_news",
+        account_page_id="p1", account_name="A", task_name="module_05_structural_news",
         started_at=_iso(now - timedelta(hours=1)), completed_at=_iso(now - timedelta(hours=1)),
         status="success", confidence="high", dry_run=True, output_json='{"dry":true}',
     ))
     result = rl.latest_successful_runs(["p1"])
-    assert ("p1", "module_06_structural_news") not in result
+    assert ("p1", "module_05_structural_news") not in result
 
 
 def test_latest_successful_runs_empty_input_returns_empty(tmp_path) -> None:
@@ -125,12 +125,12 @@ def test_parse_module_since_handles_empty() -> None:
 
 
 def test_parse_module_since_parses_pairs() -> None:
-    spec = "module_06_structural_news:1,module_07_trigger_events:1,module_14_hiring_signal:7"
+    spec = "module_05_structural_news:1,module_06_trigger_events:1,module_11_hiring_signal:7"
     out = _parse_module_since(spec)
     assert out == {
-        "module_06_structural_news": 1,
-        "module_07_trigger_events": 1,
-        "module_14_hiring_signal": 7,
+        "module_05_structural_news": 1,
+        "module_06_trigger_events": 1,
+        "module_11_hiring_signal": 7,
     }
 
 
@@ -143,19 +143,19 @@ def test_parse_module_since_rejects_unknown_task() -> None:
 def test_parse_module_since_rejects_non_integer_days() -> None:
     import argparse
     with pytest.raises(argparse.ArgumentTypeError, match="integer"):
-        _parse_module_since("module_06_structural_news:soon")
+        _parse_module_since("module_05_structural_news:soon")
 
 
 def test_parse_module_since_rejects_non_positive_days() -> None:
     import argparse
     with pytest.raises(argparse.ArgumentTypeError, match="positive"):
-        _parse_module_since("module_06_structural_news:0")
+        _parse_module_since("module_05_structural_news:0")
 
 
 def test_parse_module_since_rejects_malformed_pair() -> None:
     import argparse
     with pytest.raises(argparse.ArgumentTypeError, match="task_name:DAYS"):
-        _parse_module_since("module_06_structural_news")
+        _parse_module_since("module_05_structural_news")
 
 
 # ---- Orchestrator freshness skip + context injection ----

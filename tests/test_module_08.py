@@ -1,4 +1,4 @@
-"""Tests for module_10 (ad library) — tool + task + prompt schema."""
+"""Tests for module_08 (ad library) — tool + task + prompt schema."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import jsonschema
 import pytest
 
 import config
-import prompts.module_10_ad_library as prompt
-from tasks.module_10 import Module10AdLibrary
+import prompts.module_08_ad_library as prompt
+from tasks.module_08 import Module08AdLibrary
 from tools.apify_ad_scraper import (
     ApifyAdScraperTool,
     SUPPORTED_PLATFORMS,
@@ -169,7 +169,7 @@ def test_schema_rejects_two_platforms() -> None:
 
 def test_task_to_fields_writes_nothing() -> None:
     """Module 10 is page-body only (Notion spec §10)."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out: dict[str, Any] = {"platforms": [
         {"platform": "linkedin", "ads_running": 12, "volume": "low",
          "format_mix": [], "note": ""},
@@ -178,7 +178,7 @@ def test_task_to_fields_writes_nothing() -> None:
 
 
 def test_task_to_blocks_emits_bullet_per_platform() -> None:
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "linkedin", "ads_running": 5, "volume": "low",
@@ -269,7 +269,7 @@ def test_schema_still_accepts_platform_without_provenance() -> None:
 
 
 def test_to_blocks_emits_provenance_as_nested_child() -> None:
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "linkedin", "ads_running": 15, "volume": "medium",
@@ -294,7 +294,7 @@ def test_to_blocks_emits_provenance_as_nested_child() -> None:
 
 def test_to_blocks_omits_provenance_when_absent() -> None:
     """Cached pre-v1.3.0 platform output renders without a provenance child."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "linkedin", "ads_running": 5, "volume": "low",
@@ -308,7 +308,7 @@ def test_to_blocks_omits_provenance_when_absent() -> None:
 
 def test_to_blocks_omits_provenance_for_skipped_platforms() -> None:
     """`not applicable` platforms shouldn't get a provenance child even if one is present."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "meta", "ads_running": 0, "volume": "none",
@@ -322,12 +322,73 @@ def test_to_blocks_omits_provenance_for_skipped_platforms() -> None:
 
 def test_task_section_targets_creative_posture_ads_running() -> None:
     """Page-body assembly relies on these exact strings — guard them with a test."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     assert task.section == "Creative Posture"
     assert task.subsection == "Ads Running"
 
 
 def test_task_to_signal_sections_is_empty() -> None:
     """Module 10 doesn't contribute Buying Signals tags."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     assert task.to_signal_sections({"platforms": []}) == []
+
+
+# ---- Slug-discovery integration (v6, 2026-05-17) ----
+
+def test_ad_scraper_tool_version_bumped_to_v6() -> None:
+    """v6 bump invalidates cached LinkedIn payloads keyed on the bad
+    research_pass hint URL (e.g. cached Miro runs using /miro/ instead of
+    /mirohq/)."""
+    from tools.apify_ad_scraper import APIFY_TOOL_VERSION
+    assert APIFY_TOOL_VERSION == "apify_ad_scraper_v6"
+
+
+def test_ad_scraper_discover_linkedin_returns_hint_when_no_websearch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a Tavily client wired, _discover_linkedin degrades to the
+    LLM-picked hint URL rather than blowing up. Used by tests + by production
+    callers that don't have TAVILY_API_KEY set."""
+    import config as _config
+    from tools.apify_ad_scraper import ApifyAdScraperTool
+    monkeypatch.setattr(_config, "TAVILY_API_KEY", None)
+    tool = ApifyAdScraperTool(web_search_tool=None)
+    out = tool._discover_linkedin("Miro", "https://www.linkedin.com/company/miro/")
+    assert out.url == "https://www.linkedin.com/company/miro/"
+    assert out.source == "hint"
+
+
+def test_ad_scraper_render_includes_linkedin_discovery_lines() -> None:
+    """When the LinkedIn discovery is present, the rendered output surfaces
+    `linkedin_discovery_source` / `linkedin_discovery_confidence` / URL lines
+    so they land in runs.db for debugging."""
+    from tools.apify_ad_scraper import _render_results
+    from tools.linkedin_slug import SlugDiscovery
+
+    disc = SlugDiscovery(
+        url="https://www.linkedin.com/company/mirohq/",
+        source="tavily_scored",
+        confidence=0.85,
+        candidates_scored=[("https://www.linkedin.com/company/mirohq/", 110)],
+    )
+    text = _render_results(
+        "linkedin", "Miro", "US", items=[], used_canonical=True,
+        linkedin_discovery=disc,
+    )
+    assert "linkedin_discovery_source: tavily_scored" in text
+    assert "linkedin_discovery_confidence: 0.85" in text
+    assert "linkedin_discovery_url: https://www.linkedin.com/company/mirohq/" in text
+
+
+def test_ad_scraper_render_omits_discovery_lines_for_non_linkedin_platform() -> None:
+    """Meta + TikTok renders should not include the LinkedIn-specific
+    discovery lines — they apply only to the LinkedIn slug-discovery path."""
+    from tools.apify_ad_scraper import _render_results
+    from tools.linkedin_slug import SlugDiscovery
+
+    disc = SlugDiscovery(url=None, source="name_fallback", confidence=0.0)
+    text = _render_results(
+        "meta", "Miro", "US", items=[], used_canonical=False,
+        linkedin_discovery=disc,
+    )
+    assert "linkedin_discovery_source" not in text

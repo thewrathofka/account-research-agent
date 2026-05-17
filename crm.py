@@ -66,7 +66,7 @@ BUYING_INTENT_OPTIONS = {
 }
 # Module 4 pain-point tags. Agent-managed via PROP_PAIN_POINT_TAGS. Each tag
 # names a kind of strategic pain that maps to a Superside service angle —
-# narrative, not mechanical-signal-derived (see prompts/module_04_pain_points.py).
+# narrative, not mechanical-signal-derived (see prompts/module_03_pain_points.py).
 PAIN_POINT_TAG_OPTIONS = {
     "creative production", "localization", "new territory", "strategy",
     "audience education", "competitive displacement", "brand evolution",

@@ -20,8 +20,8 @@ import pytest
 
 import prompts.research_pass as research_prompt
 from run_log import ToolCallCache
-from tasks.module_10 import Module10AdLibrary
-from tasks.module_14 import Module14HiringSignal
+from tasks.module_08 import Module08AdLibrary
+from tasks.module_11 import Module11HiringSignal
 from tools.apify_ad_scraper import (
     _advertiser_similarity,
     _build_actor_input,
@@ -278,7 +278,14 @@ def test_tiktok_falls_back_to_brand_name_without_handle() -> None:
 # ---- Tool __call__ threads canonical URLs through end-to-end ----
 
 @pytest.fixture
-def apify_tool(tmp_path):
+def apify_tool(tmp_path, monkeypatch):
+    # The ApifyAdScraperTool now auto-constructs a real WebSearchTool in
+    # __post_init__ when TAVILY_API_KEY is set, then runs slug discovery
+    # against Tavily live for every LinkedIn call. Clearing the key keeps
+    # the fixture offline + makes the LinkedIn-no-canonical assertion below
+    # exercise the genuine fallback path (no Tavily, hint=None → no URL).
+    import config
+    monkeypatch.setattr(config, "TAVILY_API_KEY", None)
     cache = ToolCallCache(tmp_path / "runs.db")
     client = MagicMock()
     # Mock the actor + dataset chain. Return one item whose advertiser matches
@@ -340,7 +347,7 @@ def test_tool_renders_filtered_out_count(tmp_path) -> None:
 # ---- Module 10's build_user_message surfaces canonical URLs ----
 
 def test_module_10_user_message_includes_canonical_urls_when_present() -> None:
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     ctx = {
         "research_pass": {
             "raw_research": "Some research text.",
@@ -358,7 +365,7 @@ def test_module_10_user_message_includes_canonical_urls_when_present() -> None:
 def test_module_10_user_message_surfaces_when_no_canonical_urls() -> None:
     """When research_pass didn't find canonical URLs, the user message must
     explicitly warn the model so it weighs confidence accordingly."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     ctx = {
         "research_pass": {
             "raw_research": "Some research text.",
@@ -375,7 +382,7 @@ def test_module_10_user_message_surfaces_when_no_canonical_urls() -> None:
 def test_module_10_omits_unknown_kwargs() -> None:
     """If only LinkedIn URL is known, the user message names linkedin only —
     not all three. Keeps the prompt focused."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     ctx = {
         "research_pass": {
             "raw_research": "...",
@@ -395,10 +402,10 @@ def test_module_10_omits_unknown_kwargs() -> None:
 
 # ---- Module 14 surfaces greenhouse_slug ----
 
-def test_module_14_user_message_uses_research_pass_greenhouse_slug() -> None:
+def test_module_11_user_message_uses_research_pass_greenhouse_slug() -> None:
     """When research_pass provided a slug, the user message must instruct the
     model to pass it verbatim instead of letting ats_jobs guess."""
-    task = Module14HiringSignal()
+    task = Module11HiringSignal()
     ctx = {
         "module_01_gate": {"regions_present": ["USA"], "operates_in_na": True},
         "research_pass": {"greenhouse_slug": "alphasense"},
@@ -408,10 +415,10 @@ def test_module_14_user_message_uses_research_pass_greenhouse_slug() -> None:
     assert "confirmed by upstream research" in msg
 
 
-def test_module_14_user_message_falls_back_when_no_slug() -> None:
+def test_module_11_user_message_falls_back_when_no_slug() -> None:
     """When research_pass didn't surface a slug, fall back to the legacy
     heuristic-driven instruction (which is what we had before)."""
-    task = Module14HiringSignal()
+    task = Module11HiringSignal()
     ctx = {
         "module_01_gate": {"regions_present": ["USA"], "operates_in_na": True},
         "research_pass": {"greenhouse_slug": None},

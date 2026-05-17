@@ -25,7 +25,7 @@ python account_research_agent.py --limit 1
 
 # Monthly batch (skips accounts researched in last 30 days)
 python account_research_agent.py --since 30 \
-  --tasks module_01_gate,module_03_revenue_model,module_05_corporate_structure,module_06_structural_news,module_07_trigger_events,module_09_creative_reality,module_12_competitor_snapshot,module_13_industry_pulse,module_14_hiring_signal
+  --tasks module_01_gate,module_02_revenue_model,module_04_corporate_structure,module_05_structural_news,module_06_trigger_events,module_07_creative_reality,module_09_competitor_snapshot,module_10_industry_pulse,module_11_hiring_signal
 ```
 
 ## Required keys (`.env`)
@@ -37,7 +37,7 @@ python account_research_agent.py --since 30 \
 | `TAVILY_API_KEY` | always | https://app.tavily.com/home |
 | `NOTION_API_KEY` | always | https://www.notion.so/profile/integrations |
 | `NOTION_DATABASE_ID` | always | the All Accounts DB ID |
-| `APIFY_API_KEY` | optional — required only for `module_10_ad_library` | https://console.apify.com/account/integrations |
+| `APIFY_API_KEY` | optional — required only for `module_08_ad_library` | https://console.apify.com/account/integrations |
 | `PROVIDER` | optional | `anthropic` (default) \| `openai` \| `gemini` |
 
 If `APIFY_API_KEY` is absent, module 10 degrades gracefully: it returns
@@ -78,16 +78,16 @@ or `providers/openai_provider.py` and translate to Gemini's `functionCall` /
 | Task name | What it researches | Output |
 |---|---|---|
 | `module_01_gate` | Size + EU/NA presence (GATE) | `Size`; if no EU/NA → `Research Status=out_of_scope`, halts other modules |
-| `module_03_revenue_model` | Revenue model + customer segment + products | Page-body Overview |
-| `module_05_corporate_structure` | Standalone vs subsidiary vs parent + PE | `Name of Parent`, `Parent-Child` |
-| `module_06_structural_news` | M&A / IPO / layoffs in last 6 months | `Structure Notes` |
-| `module_07_trigger_events` | Funding / rebrand / agency switch / AI initiatives (90d) | `Buying Intent` multi-select |
-| `module_09_creative_reality` | Creative posture (in-house signals + agency) | Page-body Creative Posture |
-| `module_12_competitor_snapshot` | Top 3 direct competitors | Page-body Competitor Landscape |
-| `module_13_industry_pulse` | Recent category-level stories | Adds to Competitor Landscape; `Buying Intent: industry movement` |
-| `module_14_hiring_signal` | Active hiring (creative/marketing) or layoffs | `Buying Signals: hiring` or `downsizing`; Headcount sub-section |
-| `module_10_ad_library` *(Phase 2a)* | Ads running on LinkedIn (always) + Meta / TikTok (gated by audience) | Page-body `Creative Posture → Ads Running` bullets, per-platform count + format mix + volume |
-| `module_04_pain_points` *(Phase 2b)* | Synthesizes 2-4 grounded pain hypotheses from modules 1, 3, 7, 9, 10, 14 outputs | Page-body `Possible Pain Points` bullets, each pain mapped to one of 6 Superside value-prop angles with cited grounding data |
+| `module_02_revenue_model` | Revenue model + customer segment + products | Page-body Overview |
+| `module_04_corporate_structure` | Standalone vs subsidiary vs parent + PE | `Name of Parent`, `Parent-Child` |
+| `module_05_structural_news` | M&A / IPO / layoffs in last 6 months | `Structure Notes` |
+| `module_06_trigger_events` | Funding / rebrand / agency switch / AI initiatives (90d) | `Buying Intent` multi-select |
+| `module_07_creative_reality` | Creative posture (in-house signals + agency) | Page-body Creative Posture |
+| `module_09_competitor_snapshot` | Top 3 direct competitors | Page-body Competitor Landscape |
+| `module_10_industry_pulse` | Recent category-level stories | Adds to Competitor Landscape; `Buying Intent: industry movement` |
+| `module_11_hiring_signal` | Active hiring (creative/marketing) or layoffs | `Buying Signals: hiring` or `downsizing`; Headcount sub-section |
+| `module_08_ad_library` *(Phase 2a)* | Ads running on LinkedIn (always) + Meta / TikTok (gated by audience) | Page-body `Creative Posture → Ads Running` bullets, per-platform count + format mix + volume |
+| `module_03_pain_points` *(Phase 2b)* | Strategic narrative + Pain Point Tags synthesized from modules 1, 2, 9 anchors | Page-body `Possible Pain Points` bullets + `Pain Point Tags` multi-select |
 
 Page-body sections are always assembled in this order:
 **Overview → Possible Pain Points → News → Creative Posture → Competitor Landscape → Sources**
@@ -191,9 +191,9 @@ on OpenAI gpt-4.1.
 
 ## Phase 2
 
-- ✅ Module 10 (ad library — LinkedIn always; Meta/TikTok gated by audience classification) — shipped 2026-05-11
+- ✅ Module 8 (ad library — LinkedIn always; Meta/TikTok gated by audience classification) — shipped 2026-05-11 (was module 10 pre-renumber)
 - ✅ Apify integration with cost gates + graceful degrade (`APIFY_API_KEY` optional) — shipped 2026-05-11
-- ✅ Module 4 (pain-point synthesis from modules 1, 3, 7, 9, 10, 14 outputs) — shipped 2026-05-11
+- ✅ Module 3 (pain-point synthesis from modules 1, 2, 9 anchors) — shipped 2026-05-11 (was module 4 pre-renumber)
 - Cross-provider eval comparison run on the full pipeline
 
 ## Phase 3 (handoff hardening)

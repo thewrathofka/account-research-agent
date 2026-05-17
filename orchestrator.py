@@ -58,6 +58,7 @@ class Orchestrator:
         concurrency: int = config.DEFAULT_CONCURRENCY,
         label: str | None = None,
         module_since: dict[str, int] | None = None,
+        rerun: dict[str, str] | None = None,
     ):
         self.crm = crm
         self.run_log = run_log
@@ -69,6 +70,14 @@ class Orchestrator:
         # whose latest successful run is within `days` are skipped, with prior
         # output injected into the context envelope for downstream tasks.
         self.module_since = module_since or {}
+        # Surgical bypass of run-once skip for specific (task, account)
+        # pairs. `{task_name: account_substring}` — when the account name
+        # (case-insensitive) contains the substring AND the task matches,
+        # `_maybe_skip_fresh` returns False even if a prior high-confidence
+        # run exists. Used to autonomously re-evaluate a single account
+        # whose cached gate decision was wrong without disrupting the rest
+        # of the batch. See `--rerun` CLI flag.
+        self.rerun = rerun or {}
 
     def run(
         self,
@@ -308,19 +317,53 @@ class Orchestrator:
         context: dict[str, Any],
         results: list[TaskResult],
     ) -> bool:
-        """Phase A freshness gate. Returns True iff the task was skipped.
+        """Skip a task and replay its cached output when one of two rules fires.
 
-        Skip rule: the user passed `--module-since <task>:<DAYS>` AND
-        `freshness[(account.page_id, task.name)]` exists AND its started_at is
-        within `DAYS` of now. When we skip, we inject the prior `output_json`
-        into the context envelope and append a synthetic `TaskResult` so the
-        page-body writeback still has the section content (otherwise daily
-        runs would erase the page body each time they skip).
+        Returns True iff the task was skipped + replayed.
+
+        Two skip rules, checked in order:
+        1. `task.run_once = True` AND a prior successful run exists in
+           runs.db for (account, task). Used for one-time gates (size +
+           persona headcount) whose answer doesn't drift account-by-account.
+           No time threshold — once it passed, it stays passed.
+        2. `--module-since <task>:<DAYS>` was passed on the CLI AND the
+           prior run's started_at is within DAYS of now. Phase A freshness.
+
+        Both rules use the same replay path: inject the prior output_json
+        into the context envelope so downstream tasks still see it, and
+        synthesize a zero-cost TaskResult so the page-body writeback
+        re-emits the cached section content (otherwise repeated runs
+        would erase the page body each time they skip).
         """
+        prev = freshness.get((account.page_id, task.name))
+
+        # Rule 1: run-once gates. Skip whenever a prior run produced a real
+        # decision — confidence in {"high", "medium"}. Low/failed runs do NOT
+        # count: they indicate the gate couldn't decide (e.g. an upstream
+        # infra failure → confidence='low' so we don't lock the account into
+        # needs_review forever; next run gets another chance).
+        if task.run_once and prev and prev.get("confidence") in ("high", "medium"):
+            # --rerun TASK:ACCOUNT_SUBSTRING surgically bypasses this skip
+            # for a specific (task, account) pair. Used to autonomously
+            # invalidate a single wrong cached gate decision.
+            rerun_substr = self.rerun.get(task.name)
+            if rerun_substr and rerun_substr.lower() in account.name.lower():
+                log.info(
+                    "[%s] %s — run_once skip BYPASSED via --rerun %r",
+                    account.name, task.name, rerun_substr,
+                )
+            elif self._replay_cached_result(account, task, prev, context, results):
+                log.info(
+                    "[%s] %s — SKIPPED (run_once, prior success at %s, conf=%s)",
+                    account.name, task.name, prev.get("started_at"),
+                    prev.get("confidence"),
+                )
+                return True
+
+        # Rule 2: --module-since freshness threshold.
         threshold_days = self.module_since.get(task.name)
         if threshold_days is None:
             return False
-        prev = freshness.get((account.page_id, task.name))
         if not prev or not prev.get("started_at"):
             return False
         try:
@@ -331,53 +374,61 @@ class Orchestrator:
         if (now - prev_dt) > timedelta(days=threshold_days):
             return False  # stale; run it
 
-        # Fresh — skip the LLM call. Replay the prior output into context and
-        # also synthesize a TaskResult so the writeback path renders the page
-        # body and properties from the cached output. The synthesized result
-        # carries zero cost (no tokens, no searches) — its only purpose is to
-        # re-emit the cached body.
+        if self._replay_cached_result(account, task, prev, context, results):
+            log.info(
+                "[%s] %s — SKIPPED (fresh: %s, threshold %dd, prior_conf=%s)",
+                account.name, task.name, prev["started_at"], threshold_days,
+                prev.get("confidence"),
+            )
+            return True
+        return False
+
+    def _replay_cached_result(
+        self,
+        account: Account,
+        task: Task,
+        prev: dict[str, Any],
+        context: dict[str, Any],
+        results: list[TaskResult],
+    ) -> bool:
+        """Replay a prior task_runs row: inject output into context and
+        synthesize a zero-cost TaskResult. Returns True on success, False
+        when the cached output is missing or unparseable (caller falls
+        through to a real run)."""
         import json
         try:
             prior_output = json.loads(prev["output_json"]) if prev.get("output_json") else None
         except (ValueError, TypeError):
             prior_output = None
         if prior_output is None:
-            return False  # no usable cache, fall through to a real run
+            return False
 
-        if prior_output is not None:
-            context[task.name] = prior_output
-            # Strip the ephemeral _account_name field if any leaked into cache.
-            prior_output.pop("_account_name", None)
-            prior_output["_account_name"] = account.name
-            fields = task.to_fields(prior_output)
-            page_blocks = task.to_blocks(prior_output)
-            signal_sections = task.to_signal_sections(prior_output)
-            prior_output.pop("_account_name", None)
-            synthesized = TaskResult(
-                task_name=task.name, output=prior_output,
-                confidence=prev.get("confidence") or "low",
-                fields=fields, page_blocks=page_blocks,
-                signal_sections=signal_sections,
-                section=task.section, subsection=task.subsection,
-                sources=prior_output.get("sources", []) or [],
-                search_count=0,
-                input_tokens=0, output_tokens=0,
-                duration_seconds=0.0,
-                prompt_version=prev.get("prompt_version") or "cached",
-                provider_name=self.provider.name,
-                cached_input_tokens=0,
-                model_used=None,
-                tool_results_seen=[],
-                citations=prior_output.get("citations", []) or [],
-                error=None,
-            )
-            results.append(synthesized)
-
-        log.info(
-            "[%s] %s — SKIPPED (fresh: %s, threshold %dd, prior_conf=%s)",
-            account.name, task.name, prev["started_at"], threshold_days,
-            prev.get("confidence"),
+        context[task.name] = prior_output
+        prior_output.pop("_account_name", None)
+        prior_output["_account_name"] = account.name
+        fields = task.to_fields(prior_output)
+        page_blocks = task.to_blocks(prior_output)
+        signal_sections = task.to_signal_sections(prior_output)
+        prior_output.pop("_account_name", None)
+        synthesized = TaskResult(
+            task_name=task.name, output=prior_output,
+            confidence=prev.get("confidence") or "low",
+            fields=fields, page_blocks=page_blocks,
+            signal_sections=signal_sections,
+            section=task.section, subsection=task.subsection,
+            sources=prior_output.get("sources", []) or [],
+            search_count=0,
+            input_tokens=0, output_tokens=0,
+            duration_seconds=0.0,
+            prompt_version=prev.get("prompt_version") or "cached",
+            provider_name=self.provider.name,
+            cached_input_tokens=0,
+            model_used=None,
+            tool_results_seen=[],
+            citations=prior_output.get("citations", []) or [],
+            error=None,
         )
+        results.append(synthesized)
         return True
 
     def _handle_gate_failure(
@@ -507,7 +558,7 @@ _SECTION_ORDER = [
 # Sub-section ordering inside each top-level section. Tasks set `subsection`.
 # A None subsection means "main body of this section, before any subsections."
 _SUBSECTION_ORDER: dict[str, list[str | None]] = {
-    "Overview": [None, "Headcount"],
+    "Overview": [None, "In-Scope Team", "Headcount"],
     "Possible Pain Points": [None],
     "News": [None],
     "Creative Posture": [None, "Ads Running"],

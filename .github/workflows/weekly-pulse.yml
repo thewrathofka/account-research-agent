@@ -1,7 +1,7 @@
 name: Weekly pulse (Priority A+B)
 
-# Phase D — weekly cadence. Full ATS snapshot diff (Module 14) + industry
-# pulse (Module 13) on Priority A + Priority B accounts (~148 accounts).
+# Phase D — weekly cadence. Full ATS snapshot diff (Module 11) + industry
+# pulse (Module 10) on Priority A + Priority B accounts (~148 accounts).
 # ~$30-50/week projected. Catches role openings/closures slower than daily
 # would but covers the wider pipeline.
 #
@@ -40,13 +40,13 @@ jobs:
         run: |
           python account_research_agent.py \
             --priority "Priority A" \
-            --tasks module_01_gate,research_pass,module_13_industry_pulse,module_14_hiring_signal \
-            --module-since "module_13_industry_pulse:7,module_14_hiring_signal:7" \
+            --tasks module_01_gate,research_pass,module_10_industry_pulse,module_11_hiring_signal \
+            --module-since "module_10_industry_pulse:7,module_11_hiring_signal:7" \
             --cost-summary
       - name: Run weekly pulse (Priority B)
         run: |
           python account_research_agent.py \
             --priority "Priority B" \
-            --tasks module_01_gate,research_pass,module_13_industry_pulse,module_14_hiring_signal \
-            --module-since "module_13_industry_pulse:7,module_14_hiring_signal:7" \
+            --tasks module_01_gate,research_pass,module_10_industry_pulse,module_11_hiring_signal \
+            --module-since "module_10_industry_pulse:7,module_11_hiring_signal:7" \
             --cost-summary
