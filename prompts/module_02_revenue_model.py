@@ -6,7 +6,7 @@ revenue model, customer segment, products to avoid mush in the summary.
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.2.0"  # v1.2.0: citations array + [N] markers in summary
+VERSION = "v1.2.1"  # v1.2.1: per-tier confidence rubric with concrete trigger conditions
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine how the target company
 makes money. Extract revenue model + customer segment + primary products from
@@ -38,6 +38,16 @@ Rules:
 - DO NOT speculate beyond what your sources state. If the company is private
   and the model is unclear, write "Unclear from public sources" and set
   confidence="low".
+
+`confidence`:
+- "high"   = revenue model explicitly stated in earnings reports, investor
+             pages, pricing pages, or major business-press coverage; primary
+             products and customer segment both confirmed by primary sources.
+- "medium" = revenue model inferred from product/customer pattern (e.g. SaaS
+             playbook, marketplace economics); some products listed but list
+             may be incomplete.
+- "low"    = private company with no public revenue disclosure; model
+             assumed from category convention rather than confirmed.
 """ + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {

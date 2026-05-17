@@ -6,8 +6,7 @@ single text scanned at-a-glance by the BDR team; free-form drift becomes noise.
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.5.0"  # v1.5.0: tiered recency (12mo big events / 6mo otherwise)
-                    # + stricter date-out-of-scope enforcement
+VERSION = "v1.5.1"  # v1.5.1: per-tier confidence rubric with concrete trigger conditions
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify significant structural
 events — M&A, IPOs, layoffs, bankruptcy, restructuring — by extracting facts
@@ -105,6 +104,18 @@ Rules:
   in Feb 2026 [1], primarily in customer success and engineering [2]"). The
   text becomes a page-body paragraph; the orchestrator turns the markers into
   clickable links.
+
+`confidence`:
+- "high"   = event covered by 2+ named outlets, with a clear absolute date
+             inside the applicable cutoff (12mo for big events, 6mo otherwise);
+             counterparty names verified from primary sources.
+- "medium" = single named source OR date is approximate (month-level only)
+             but clearly inside the cutoff; counterparty names known but
+             not double-confirmed.
+- "low"    = signal of an event but no verifiable absolute date; OR event
+             likely just outside the cutoff window; OR counterparty
+             ambiguous. Prefer structure_note=null + confidence="high" over
+             a low-confidence half-correct claim.
 """ + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {

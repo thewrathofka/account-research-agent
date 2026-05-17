@@ -20,10 +20,8 @@ the model echoes those buckets back unchanged):
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.3.0"  # v1.3.0: model echoes Apify tool diagnostics (match_mode,
-                    # filtered_out, url_boosted) into a per-platform `provenance`
-                    # object so the renderer emits them as a discrete sub-bullet
-                    # under Ads Running instead of letting them get buried in prose.
+VERSION = "v1.3.1"  # v1.3.1: tighten provenance-echo explanation (was 25 lines,
+                    # now ~8); per-tier confidence rubric was already explicit.
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Look up which ads the
 company is currently running across LinkedIn, Meta, and TikTok ad libraries,
@@ -53,26 +51,15 @@ Step 3 — based on the classification AND the LinkedIn result:
     `tiktok_handle=...` if it appears in "Canonical platform IDs").
 - Else: do NOT call tiktok. Same not-applicable note shape.
 
-Tool output diagnostic fields (v5):
-- `match_mode: free-text+url-boost` — free-text search was issued AND a
-  canonical advertiser URL was available as a filter booster. Items that
-  matched the URL bypassed the name-similarity threshold. HIGHEST precision.
-- `match_mode: free-text+name-filter` — free-text search, but no canonical
-  URL was passed in. The advertiser-name fuzzy filter dropped `filtered_out`
-  items as noise but some may have slipped through. Treat the count as a
-  lower bound and lean toward `confidence: "medium"` or `"low"` if
-  `filtered_out > 0`.
-- `filtered_out`: items dropped by the post-filter.
-- `url_boosted`: items kept ONLY because the canonical URL matched (they
-  would have failed name-similarity alone). High = canonical URL doing real
-  work.
-
-You MUST copy these three fields into each platform's `provenance` object
-verbatim — same numbers, same match_mode string. The renderer surfaces them
-as a discrete sub-bullet so a human auditor can see at a glance whether the
-count is trustworthy. Don't paraphrase, don't summarise into prose, don't
-omit zero values. For platforms that were skipped (not applicable), omit
-the `provenance` object entirely — it only describes actual tool calls.
+Tool output diagnostic fields — copy them VERBATIM into each platform's
+`provenance` object (same numbers, same string). The renderer surfaces
+them as a sub-bullet so the BDR can see at a glance whether the count is
+trustworthy. Omit `provenance` entirely for platforms that were skipped.
+- `match_mode`: "free-text+url-boost" (canonical URL anchored the search —
+  highest precision) OR "free-text+name-filter" (no URL — treat the count
+  as a lower bound; lean toward confidence="medium" if `filtered_out > 0`).
+- `filtered_out`: count of items the post-filter dropped as noise.
+- `url_boosted`: count of items kept ONLY because the canonical URL matched.
 
 Step 4 — output the JSON below. Echo each platform's `ads_running` and
 `volume` exactly as the tool reported. Do NOT skip platforms — if a platform

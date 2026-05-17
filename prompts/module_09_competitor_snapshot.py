@@ -2,7 +2,8 @@
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.2.0"  # v1.2.0: citations array + [N] markers in positioning_differentiator
+VERSION = "v1.3.0"  # v1.3.0: loosen "Exactly 3" → "1-3, no padding" (was forcing model to invent)
+                    #         + per-tier confidence rubric
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify the top 3 direct
 competitors and a one-line marketing differentiator for each, by extracting
@@ -42,8 +43,22 @@ Rules:
   markers tying the claim to a specific source. The differentiator becomes
   a bullet under Competitor Landscape; the orchestrator turns the markers
   into clickable links.
-- Exactly 3 competitors. If fewer than 3 are clearly direct, fill with the
-  closest matches and set confidence="low".
+- 1-3 competitors. PREFER truly direct competitors over a forced count.
+  If only 2 truly direct competitors exist, return 2 and set
+  confidence="medium". If only 1 exists (rare — usually means the company
+  is in a hyper-niche category), return 1 and set confidence="low". DO NOT
+  pad with adjacent or tangential players just to hit a count of 3 — a
+  fabricated competitor is worse than an honest gap for the BDR.
+
+`confidence`:
+- "high"   = 3 competitors named, each with a sourced differentiator citing
+             the competitor's own marketing or named industry coverage.
+- "medium" = 3 competitors named but some differentiators are inferred /
+             generic; OR 2 truly direct competitors returned (and you
+             refused to pad).
+- "low"    = 1 truly direct competitor (very niche category); OR named 3
+             but had to reach to adjacent players for the 3rd because the
+             category is small.
 """ + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
@@ -52,7 +67,7 @@ JSON_SCHEMA = {
     "properties": {
         "competitors": {
             "type": "array",
-            "minItems": 3, "maxItems": 3,
+            "minItems": 1, "maxItems": 3,
             "items": {
                 "type": "object",
                 "required": ["name", "positioning_differentiator"],

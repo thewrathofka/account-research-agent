@@ -17,8 +17,10 @@ All agent-detected trigger tags now belong on "Buying Signals".)
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.5.0"  # v1.5.0: 90d hard cutoff + drop-by-date rule + reference
-                    # the cutoff date from _today_header() instead of doing math
+VERSION = "v1.5.1"  # v1.5.1: fix the rule that said "summary must reference date
+                    # within last 6 months" — the trigger-events cutoff is 90 days,
+                    # not 6 months (matches the recency policy at the top of the
+                    # prompt and the documented spec).
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Identify buying-signal triggers
 by extracting facts from the research context provided in the user message.
@@ -82,9 +84,10 @@ Rules:
   hiring announcement (e.g. "company announces 50-person creative team buildout").
   Routine job listings are module 14, not 7.
 - Each trigger_details entry has exactly: trigger, summary (1 sentence), url.
-- Every summary must reference an absolute date within the last 6 months from
-  Today. If the research context lacks a verifiable date for a candidate
-  trigger, drop it.
+- Every summary must reference an absolute date within the 90-day cutoff
+  given in the user message header. If the research context lacks a
+  verifiable date for a candidate trigger, drop it — don't keep older
+  signals (a 5-month-old funding round is stale for outreach timing).
 - DO NOT invent triggers. If your searches return nothing, return [] and
   confidence="medium" or "low".
 - Each trigger_details `summary` should carry `[N]` citation markers for the

@@ -10,7 +10,7 @@ Output: Creative Posture page section.
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.3.0"  # v1.3.0: citations array + [N] markers in creative_posture_summary
+VERSION = "v1.3.1"  # v1.3.1: per-tier confidence rubric with concrete trigger conditions
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Build a short profile of
 the company's *creative posture* — how they currently produce creative work
@@ -58,6 +58,17 @@ Rules:
   company might buy creative production at scale. Carry `[N]` citation markers
   after specific named agencies, role counts, and quoted JD phrases. The
   summary becomes a page-body paragraph; markers become clickable links.
+
+`confidence`:
+- "high"   = multiple verbatim JD pain phrases captured AND at least one
+             confirmed named agency relationship AND specific role count from
+             a primary source (careers page or jobspy with low-noise match).
+- "medium" = either JD pain phrases OR a named agency relationship, but not
+             both; OR the role count is reasonable but not corroborated.
+- "low"    = generic creative-needs framing with no specific JD language and
+             no named agency. Common for companies with no public careers
+             page or thin web presence; that's the honest read — set low and
+             move on.
 """ + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {

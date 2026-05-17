@@ -16,7 +16,7 @@ Bumping rules:
 - Major (v2.0.0): redesign the gate semantics (e.g. add APAC presence)
 """
 
-VERSION = "v1.3.0"
+VERSION = "v1.3.1"  # v1.3.1: per-tier confidence rubric with concrete trigger conditions
 
 SYSTEM_PROMPT = """You are a B2B sales research agent verifying ICP fit. Confirm the
 company has operations in at least one of the following in-scope regions, and
@@ -76,8 +76,16 @@ Rules:
   company website").
 - evidence_in_scope: one short sentence summarising the strongest evidence
   for each in-scope region you marked true (city + country, source).
-- confidence: "high" if multiple authoritative sources agree on size + regions;
-  "medium" if sparse/mixed; "low" if you guessed.
+- confidence:
+  - "high"   = TWO OR MORE authoritative sources (SEC filings, company website,
+               LinkedIn company page, established business press) agree on
+               BOTH the employee count band AND at least one in-scope region.
+  - "medium" = sources agree on regions OR size but conflict / are sparse on
+               the other dimension; OR only one authoritative source.
+  - "low"    = single non-authoritative source, training-data guess, or only
+               "global / international" claims without country-named offices.
+               Setting confidence=low here will route the account to
+               `needs_review` downstream — do not use to dodge a hard call.
 - sources: only URLs that appeared in your search results. No invented offices.
 - A LinkedIn sales rep in a region is NOT operational presence — only count
   physical offices, regional job posts, or authoritative source statements.

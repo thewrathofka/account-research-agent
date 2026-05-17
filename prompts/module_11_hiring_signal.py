@@ -11,7 +11,7 @@ Outputs:
 
 from prompts._citations import CITATION_INSTRUCTIONS, CITATIONS_SCHEMA_FRAGMENT
 
-VERSION = "v1.5.0"  # v1.5.0: location-aware hiring signal (UK+EU+NA only triggers `hiring`)
+VERSION = "v1.5.1"  # v1.5.1: per-tier confidence rubric with concrete trigger conditions
 
 SYSTEM_PROMPT = """You are a B2B sales research agent. Determine if the company is
 actively hiring (especially creative/marketing roles) or recently downsized,
@@ -128,6 +128,21 @@ Rules:
 
   The summary becomes the Headcount subsection paragraph; the orchestrator
   turns the `[N]` markers into clickable links.
+
+`confidence`:
+- "high"   = ats_jobs returned a canonical Greenhouse count AND important_roles
+             tagged with clear tier/scope, OR jobspy returned ≥30 distinct
+             roles across multiple boards with low-noise advertiser-name
+             match. Layoff signal direction (hiring vs downsizing vs neither)
+             is unambiguous from the data.
+- "medium" = jobspy returned data but ats_jobs had NO_ATS_MATCH (Greenhouse
+             slug not found / not a Greenhouse customer); OR ats_jobs returned
+             data but counts are sparse (<10 roles); OR signal direction is
+             clear but in-scope vs out-of-scope is hard to disentangle.
+- "low"    = both tools sparse / failing / returned NOT CONFIGURED; OR
+             signal indeterminate (some hiring + some layoffs in the same
+             window with similar magnitudes). Don't guess — set low and let
+             the orchestrator route to needs_review.
 """ + "\n\n" + CITATION_INSTRUCTIONS
 
 JSON_SCHEMA = {
