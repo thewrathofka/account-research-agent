@@ -1,16 +1,16 @@
-"""Module 3 — How they make money. Output → page-body Overview section."""
+"""Module 2 — How they make money. Output → page-body Overview section."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import crm
-import prompts.module_03_revenue_model as prompt
+import prompts.module_02_revenue_model as prompt
 from tasks.base import Task
 
 
-class Module03RevenueModel(Task):
-    name = "module_03_revenue_model"
+class Module02RevenueModel(Task):
+    name = "module_02_revenue_model"
     section = "Overview"
     subsection = None
     prompt_module = prompt

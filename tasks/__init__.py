@@ -10,7 +10,7 @@ from __future__ import annotations
 from tasks._legacy import CompanyOverview
 from tasks.base import Task, TaskResult
 from tasks.module_01 import Module01Gate
-from tasks.module_03 import Module03RevenueModel
+from tasks.module_02 import Module02RevenueModel
 from tasks.module_04 import Module04PainPoints
 from tasks.module_05 import Module05CorporateStructure
 from tasks.module_06 import Module06StructuralNews
@@ -27,7 +27,7 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "company_overview": CompanyOverview,
     "research_pass": ResearchPass,
     "module_01_gate": Module01Gate,
-    "module_03_revenue_model": Module03RevenueModel,
+    "module_02_revenue_model": Module02RevenueModel,
     "module_04_pain_points": Module04PainPoints,
     "module_05_corporate_structure": Module05CorporateStructure,
     "module_06_structural_news": Module06StructuralNews,
@@ -48,7 +48,7 @@ TASK_REGISTRY: dict[str, type[Task]] = {
 PHASE1_TASKS = [
     "module_01_gate",
     "research_pass",
-    "module_03_revenue_model",
+    "module_02_revenue_model",
     "module_05_corporate_structure",
     "module_06_structural_news",
     "module_07_trigger_events",
@@ -66,7 +66,7 @@ PHASE1_TASKS = [
 PHASE2_TASKS = [
     "module_01_gate",
     "research_pass",
-    "module_03_revenue_model",
+    "module_02_revenue_model",
     "module_05_corporate_structure",
     "module_06_structural_news",
     "module_07_trigger_events",
@@ -129,7 +129,7 @@ MONTHLY_TASKS = [
 QUARTERLY_TASKS = [
     "module_01_gate",
     "research_pass",
-    "module_03_revenue_model",
+    "module_02_revenue_model",
     "module_05_corporate_structure",
     "module_12_competitor_snapshot",
 ]

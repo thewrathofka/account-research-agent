@@ -18,7 +18,7 @@ History:
 Inputs (provided by tasks/module_04.py.build_user_message):
 - research_pass.raw_research            ← the narrative source (free text)
 - module_01_gate output                  ← regions_present anchor
-- module_03_revenue_model output         ← business model + customer segment
+- module_02_revenue_model output         ← business model + customer segment
 - module_12_competitor_snapshot output   ← competitor names + differentiators
 
 Inputs that are deliberately NOT provided to this module:

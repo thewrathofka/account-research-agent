@@ -97,7 +97,7 @@ def test_cost_summary_totals_match_per_call_estimates(tmp_path) -> None:
     # Two Sonnet calls on the same account, different tasks.
     _record(rl, account="Oracle", task="module_01_gate",
             model="claude-sonnet-4-6", input_tokens=10_000, output_tokens=2_000)
-    _record(rl, account="Oracle", task="module_03_revenue_model",
+    _record(rl, account="Oracle", task="module_02_revenue_model",
             model="claude-sonnet-4-6", input_tokens=8_000, output_tokens=1_500)
     cs = rl.cost_summary()
 
@@ -125,7 +125,7 @@ def test_cost_summary_groups_by_account_task_and_model(tmp_path) -> None:
     rl = RunLog(tmp_path / "runs.db")
     _record(rl, account="Oracle", task="module_01_gate",
             model="claude-sonnet-4-6", input_tokens=10_000, output_tokens=2_000)
-    _record(rl, account="Oracle", task="module_03_revenue_model",
+    _record(rl, account="Oracle", task="module_02_revenue_model",
             model="claude-haiku-4-5", input_tokens=8_000, output_tokens=1_500)
     _record(rl, account="AlphaSense", task="module_01_gate",
             model="claude-sonnet-4-6", input_tokens=5_000, output_tokens=1_000)
@@ -136,7 +136,7 @@ def test_cost_summary_groups_by_account_task_and_model(tmp_path) -> None:
     assert accts == {"Oracle", "AlphaSense"}
     # Two tasks surfaced
     tasks = {r["task"] for r in cs["per_task"]}
-    assert tasks == {"module_01_gate", "module_03_revenue_model"}
+    assert tasks == {"module_01_gate", "module_02_revenue_model"}
     # Two models surfaced
     models = {r["model"] for r in cs["per_model"]}
     assert models == {"claude-sonnet-4-6", "claude-haiku-4-5"}

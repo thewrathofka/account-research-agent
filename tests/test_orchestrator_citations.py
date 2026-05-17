@@ -223,7 +223,7 @@ def test_research_section_blocks_renders_inline_links_no_footnote_section() -> N
     remap, so each module's claims still navigate to the cited URL, but
     no separate "Sources:" bullet list is appended at the section end."""
     r_a = _make_result(
-        task_name="module_03_revenue_model", section="Overview",
+        task_name="module_02_revenue_model", section="Overview",
         page_blocks=[crm_module.paragraph("Revenue model claim [1].")],
         citations=[{"n": 1, "title": "A1", "url": "https://example.com/a1"}],
     )
@@ -265,7 +265,7 @@ def test_research_section_blocks_renders_inline_links_no_footnote_section() -> N
 
 def test_research_section_blocks_no_footnote_block_for_section_without_citations() -> None:
     r = _make_result(
-        task_name="module_03_revenue_model", section="Overview",
+        task_name="module_02_revenue_model", section="Overview",
         page_blocks=[crm_module.paragraph("Plain claim, no markers.")],
         citations=[],
     )

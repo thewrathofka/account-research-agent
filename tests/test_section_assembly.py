@@ -48,7 +48,7 @@ def test_section_order_overview_first_competitor_last():
     """Top-level sections appear in the prescribed order regardless of task ordering."""
     results = [
         _result("module_12_competitor_snapshot", "Competitor Landscape", None, [_para("comp")]),
-        _result("module_03_revenue_model", "Overview", None, [_para("overview")]),
+        _result("module_02_revenue_model", "Overview", None, [_para("overview")]),
         _result("module_07_trigger_events", "News", None, [_para("news")]),
     ]
     blocks = _research_section_blocks(results)
@@ -64,7 +64,7 @@ def test_subsection_grouping_overview_headcount():
     """Module 14's section=Overview, subsection=Headcount renders as 'Overview — Headcount'
     AFTER the main Overview content."""
     results = [
-        _result("module_03_revenue_model", "Overview", None, [_para("revenue body")]),
+        _result("module_02_revenue_model", "Overview", None, [_para("revenue body")]),
         _result("module_14_hiring_signal", "Overview", "Headcount",
                 [_para("47 open roles, 8 in creative")]),
     ]

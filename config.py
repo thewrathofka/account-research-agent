@@ -100,7 +100,7 @@ MAX_APIFY_RESULTS_PER_PLATFORM = 50
 MAX_COST: dict[str, float] = {
     "module_01_gate": 0.04,
     "research_pass": 0.06,
-    "module_03_revenue_model": 0.02,
+    "module_02_revenue_model": 0.02,
     "module_05_corporate_structure": 0.02,
     "module_06_structural_news": 0.02,
     "module_07_trigger_events": 0.03,

@@ -37,7 +37,7 @@ class Module10AdLibrary(Task):
         queries land on the right advertiser instead of free-text matching."""
         rp = context.get("research_pass") or {}
         research = rp.get("raw_research", "")
-        revenue = context.get("module_03_revenue_model") or {}
+        revenue = context.get("module_02_revenue_model") or {}
         creative = context.get("module_09_creative_reality") or {}
 
         prior_lines: list[str] = []

@@ -302,7 +302,7 @@ def test_build_user_message_includes_raw_research_and_anchors() -> None:
             "size_band": "1000-2000", "regions_present": ["Netherlands", "Italy"],
             "sources": ["https://gate.example.com"],
         },
-        "module_03_revenue_model": {
+        "module_02_revenue_model": {
             "revenue_model": "Transaction fees on auctions",
             "primary_customer_segment": "Individual + small-business sellers",
             "sources": [],
@@ -385,6 +385,6 @@ def test_anchor_modules_excludes_mechanical_signal_modules() -> None:
     """v2.0.0 contract: only the 3 light anchors, no mechanical signals."""
     assert set(ANCHOR_MODULES) == {
         "module_01_gate",
-        "module_03_revenue_model",
+        "module_02_revenue_model",
         "module_12_competitor_snapshot",
     }

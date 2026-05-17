@@ -34,7 +34,7 @@ _TIMING_PAIN_TAGS: dict[str, str] = {
 # these are factual scaffolding.
 ANCHOR_MODULES: list[str] = [
     "module_01_gate",
-    "module_03_revenue_model",
+    "module_02_revenue_model",
     "module_12_competitor_snapshot",
 ]
 
