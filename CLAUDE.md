@@ -206,7 +206,9 @@ v0.0 behaviour for offline replay.
 
 ## Full MVP spec (source of truth for both tracks)
 
-Numbered as Kali specified. Items removed from MVP are listed at the bottom.
+Numbered sequentially (no gaps). Renumbered 2026-05-17 — the original spec
+had gaps at 2, 8, 11 (modules cut from MVP); the renumbering closes those
+gaps and drops the M2 persona-gate plan entirely.
 
 ### 1. Size + region gate (GATE, run-once)
 - Verify employee count; confirm operational presence in EU / UK / Norway /
@@ -218,63 +220,34 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
   (`Task.run_once = True`; cached output replayed from `runs.db`).
 - Tool: Tavily (light — verifying existing CRM data, not deep research).
 
-### 2. Persona-headcount gate (GATE, run-once)
-- Count marketing / creative / brand employees on LinkedIn, restricted to
-  NA / EU / UK / Norway / Switzerland.
-- **Output:** Notion `In-Scope Headcount` (number) — sortable BDR signal +
-  "M2 has run" marker for the CRM.
-- **GATE:** if fewer than `PERSONA_GATE_MIN_HEADCOUNT` (default 5) in-scope
-  staff, set `Research Status = out_of_scope`, **halt all subsequent
-  modules.** Apify infra failures route to `needs_review` instead (gate
-  refuses to decide without real data).
-- **Run-once:** skipped on every subsequent run via the same `Task.run_once`
-  mechanism as M1. Re-trigger by manually deleting the M2 row from
-  `runs.db` task_runs.
-- **Persona scope:** medium / Superside-relevant — title contains any of
-  {marketing, marketer, growth, demand gen, product marketing, campaign,
-  performance marketing, creative, designer, design, art director, video,
-  production, producer, motion, content, brand, communications, comms,
-  social, social media}. Priority order brand > creative > marketing
-  ("Brand Designer" → brand).
-- **Geo scope:** location contains any of {UK + common cities, Norway,
-  Switzerland + cities, NA = US/Canada/Mexico + common US metros, 27 EU
-  member states}.
-- **Cap:** `IN_SCOPE_HEADCOUNT_MAX_RESULTS` profiles per account (default
-  250). Above this, count is reported as a floor with `truncated_at_cap = true`.
-- **Cost:** $0.40–0.50 per account (harvestapi $4/1000 + $0.02 start fee).
-- Tool: Apify (`harvestapi/linkedin-company-employees`, cookie-free, 2500/query cap).
-  Tool also runs deterministic Tavily-based slug discovery before the Apify
-  call (`tools/linkedin_slug.py`) so a bad `research_pass.linkedin_company_url`
-  hint can't poison the count.
-
-### 3. How they make money
+### 2. How they make money
 - Revenue model + primary customer segment + primary products/SKUs.
 - **Output:** 2-3 sentence summary on the page body under heading `Overview`.
 - Tool: Tavily.
 
-### 4. Possible pain points (synthesis)
+### 3. Possible pain points (synthesis)
 - Synthesized hypotheses tying to Superside's value prop: production bottleneck,
   agency cost burn, hiring gaps, multi-market localization, post-layoff "same
   output fewer people," AI-creative receptivity.
 - **Output:** 2-4 specific pain hypotheses, each grounded in concrete data, on
   page body under heading `Possible Pain Points`.
-- Tool: Claude reasoning over modules 1, 3, 9, 10, 14 outputs (no fetch).
+- Tool: Claude reasoning over modules 1, 2, 7, 8, 11 outputs (no fetch).
 
-### 5. Corporate structure
+### 4. Corporate structure
 - Standalone vs subsidiary vs parent. PE ownership if any.
 - **Output:** Notion `sister/child` (text — sister/child companies if relevant)
   + `Parent` (text — parent name; if standalone with no children, leave empty;
   if itself a parent or owns notable child brands, write its own name).
 - Tool: Tavily.
 
-### 6. Structural news (last 6 months)
+### 5. Structural news (last 6 months)
 - M&A, spin-offs, mergers, IPO/SPAC, restructurings, layoffs, bankruptcy/distress,
   market exits.
 - **Output:** Notion `Structure Notes` text property — short phrase like
   "recent IPO", "mass layoffs", "merged with X", "buying-frozen", "buying-friendly".
 - Tool: Tavily news search.
 
-### 7. Trigger events
+### 6. Trigger events
 - Funding rounds, active creative/marketing job posts, rebrand or campaign
   launches, agency RFP/switch news, AI initiative announcements.
 - *(New marketing/brand/creative leader detection removed for MVP.)*
@@ -282,54 +255,52 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
   context detail to page body under heading `News` (under Possible Pain Points).
 - Tool: Tavily news + Tavily search.
 
-### 9. Current creative reality (lite — without persona-people data)
+### 7. Current creative reality (lite — without persona-people data)
 - Pain phrases mined from active job descriptions ("scale creative",
   "manage freelancers", "production bottleneck"). Active agency relationships.
 - *(In-house team breakdown by function and team-to-marketing ratio removed —
-  required module-2 LinkedIn employee data.)*
+  required per-employee LinkedIn data, dropped from MVP.)*
 - **Output:** "Creative Posture" summary on page body under heading `News`.
 - Tool: jobspy (free Python lib, aggregates Indeed/LinkedIn/Glassdoor/ZipRecruiter)
   + Tavily news for agency mentions.
 
-### 10. Ad library
+### 8. Ad library
 - What ads they're running, where, format mix, volume (last 12 months only).
 - LinkedIn Ad Library always; Meta only after Claude classifies B2C/DTC/hybrid +
   count check > 0; TikTok only after classification as Gen-Z/lifestyle + count > 0.
 - **Output:** page body under heading `Creative Posture` → sub-heading `Ads Running`,
   bullets per platform with ad type (static / motion / video / carousel) and
   volume (low / medium / high).
-- Tool: Apify actors:
+- Tool: Apify actors (LinkedIn slug discovery via `tools/linkedin_slug.py`):
   - LinkedIn: `automation-lab/linkedin-ad-library-scraper`
   - Meta: `automly/facebook-ad-library-scraper` ($0.65/1k)
   - TikTok: Apify TikTok ad scraper
 
-### 12. Competitor snapshot
+### 9. Competitor snapshot
 - Top 3 direct competitors + short note on news/marketing differentiation.
 - **Output:** page body under heading `Competitor Landscape`.
 - Tool: Tavily.
 
-### 13. Industry pulse
+### 10. Industry pulse
 - 2-3 recent category-level stories (last 60 days).
 - **Output:** appended to `Competitor Landscape` as a paragraph. If relevant,
   add `industry movement` to `Buying Intent` property.
 - Tool: Tavily news.
 
-### 14. Hiring or downsizing
+### 11. Hiring or downsizing
 - Active hiring (especially creatives/marketing) or layoffs.
 - **Output:** add `hiring` or `downsizing` to `Buying Signals` property; write
   1-2 sentence summary on page body under heading `Headcount` (sub-section of `Overview`).
 - Tool: jobspy + LinkedIn jobs (Apify, optional) + Tavily news.
 
-### Modules removed from MVP
-- **8** buying committee (depended on per-employee data the lean M2 doesn't capture)
-- **11** top contact deep-dives (depended on 8)
-- **"New marketing/brand/creative leader (last 90 days)"** sub-trigger of module 7
-
-### Module 2 — revived 2026-05-15
-Originally cut because the spec called for per-employee tenure/seniority data
-that was too expensive on Apify. Brought back as a lean **gate** (not a
-research module): just a count, deterministic title + geo filtering inside
-the tool, one-time per account. See section 2 above.
+### Removed from MVP (pre-renumbering reference)
+The original spec had three modules that were cut and never shipped: a
+persona-headcount gate (briefly revived 2026-05-15 as `module_02_persona_gate`,
+then dropped 2026-05-17 when slot 02 was reassigned to revenue_model);
+a "buying committee" module; and a "top contact deep-dives" module. All
+depended on per-employee LinkedIn data that was too expensive on Apify.
+A "new marketing/brand/creative leader (last 90 days)" sub-trigger of the
+trigger-events module was also removed.
 
 ---
 

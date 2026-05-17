@@ -61,9 +61,8 @@ def _validate_label(label: str | None) -> str | None:
 def _parse_rerun(entries: list[str] | None) -> dict[str, str]:
     """Parse repeated `--rerun TASK:ACCOUNT_SUBSTRING` flags → {task: substring}.
 
-    Surgical bypass for run-once gates that cached a wrong answer (e.g. Miro's
-    M2 row from 2026-05-15 with confidence=high, total=0 from the bad slug).
-    `--rerun "module_02_persona_gate:Miro"` forces the gate to re-run for any
+    Surgical bypass for run-once gates that cached a wrong answer.
+    `--rerun "module_01_gate:Miro"` forces the gate to re-run for any
     account whose name (lowercased) contains "miro". Other accounts replay
     their cached row normally.
     """
@@ -158,7 +157,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--rerun", action="append", default=None, metavar="TASK:ACCOUNT",
                    help="Surgically force a (task, account) pair to bypass "
                         "the run-once skip rule. Format: "
-                        "`module_02_persona_gate:Miro`. Repeatable. "
+                        "`module_01_gate:Miro`. Repeatable. "
                         "ACCOUNT is a case-insensitive substring match against "
                         "the Notion account title. Only the matching task on "
                         "matching accounts re-runs; everything else replays "

@@ -34,10 +34,6 @@ PROP_SISTER_CHILD = "sister/child"
 PROP_PARENT = "Parent"
 PROP_PAIN_POINT_TAGS = "Pain Point Tags"
 PROP_NOTES = "Notes"
-# Module 02 — in-scope marketing/creative/brand employee count from LinkedIn,
-# scoped to NA/EU/UK/Norway/Switzerland. One-time gate output; doubles as a
-# sortable BDR signal (buyer-surface size) once the gate passes.
-PROP_IN_SCOPE_HEADCOUNT = "In-Scope Headcount"
 
 # Agent-managed
 PROP_LAST_RESEARCHED = "Last Researched"
@@ -110,7 +106,6 @@ EXPECTED_NOTION_PROPERTIES: dict[str, str] = {
     PROP_STRUCTURE_NOTES: "rich_text",
     PROP_NEEDS_ATTENTION: "multi_select",
     PROP_ATTENTION_ACKNOWLEDGED_AT: "date",
-    PROP_IN_SCOPE_HEADCOUNT: "number",
 }
 
 
