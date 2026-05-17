@@ -149,7 +149,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--module-since", default=None, metavar="SPEC",
                    help="Per-module freshness gating. Comma-separated "
                         "`module_NN:DAYS` pairs (e.g. "
-                        "'module_06_structural_news:1,module_07_trigger_events:1,"
+                        "'module_05_structural_news:1,module_06_trigger_events:1,"
                         "module_14_hiring_signal:7'). Modules with a fresh "
                         "successful row within the threshold are skipped; the "
                         "prior output is injected into the context envelope "

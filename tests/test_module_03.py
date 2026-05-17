@@ -333,14 +333,14 @@ def test_build_user_message_excludes_mechanical_modules() -> None:
         "research_pass": {"raw_research": "x", "sources": []},
         "module_01_gate": {"regions_present": ["USA"]},
         # Even if these are in the envelope, the prompt must not embed them:
-        "module_06_structural_news": {"structure_note": "mass layoffs"},
-        "module_07_trigger_events": {"triggers_detected": ["funding round"]},
+        "module_05_structural_news": {"structure_note": "mass layoffs"},
+        "module_06_trigger_events": {"triggers_detected": ["funding round"]},
         "module_09_creative_reality": {"creative_posture_summary": "..."},
         "module_10_ad_library": {"platforms": [{"platform": "linkedin"}]},
         "module_14_hiring_signal": {"headcount_signal": "downsizing"},
     }
     msg = task.build_user_message("X", fake_context)
-    for mechanical in ("module_06_structural_news", "module_07_trigger_events",
+    for mechanical in ("module_05_structural_news", "module_06_trigger_events",
                        "module_09_creative_reality", "module_10_ad_library",
                        "module_14_hiring_signal"):
         assert f"### {mechanical}" not in msg, (

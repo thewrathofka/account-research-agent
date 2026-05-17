@@ -49,7 +49,7 @@ def test_section_order_overview_first_competitor_last():
     results = [
         _result("module_12_competitor_snapshot", "Competitor Landscape", None, [_para("comp")]),
         _result("module_02_revenue_model", "Overview", None, [_para("overview")]),
-        _result("module_07_trigger_events", "News", None, [_para("news")]),
+        _result("module_06_trigger_events", "News", None, [_para("news")]),
     ]
     blocks = _research_section_blocks(results)
     texts = _block_texts(blocks)

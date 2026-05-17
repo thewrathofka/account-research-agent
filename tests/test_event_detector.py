@@ -22,16 +22,16 @@ from providers.base import ProviderResult
 from run_log import RunLog, RunRecord
 from tasks.base import DetectedEvent
 from tasks.module_03 import Module03PainPoints
-from tasks.module_05 import Module05CorporateStructure
-from tasks.module_06 import Module06StructuralNews
-from tasks.module_07 import Module07TriggerEvents
+from tasks.module_04 import Module04CorporateStructure
+from tasks.module_05 import Module05StructuralNews
+from tasks.module_06 import Module06TriggerEvents
 from tasks.module_14 import Module14HiringSignal
 
 
 # ---- Module 06 ----
 
 def test_module_06_alerts_on_bankruptcy_transition():
-    task = Module06StructuralNews()
+    task = Module05StructuralNews()
     prev = {"structure_note": None, "buying_implication": None, "confidence": "high"}
     curr = {
         "structure_note": "bankruptcy",
@@ -51,7 +51,7 @@ def test_module_06_alerts_on_bankruptcy_transition():
 
 
 def test_module_06_no_alert_on_same_state():
-    task = Module06StructuralNews()
+    task = Module05StructuralNews()
     prev = {"structure_note": "mass layoffs", "event_date": "2026-04-01", "confidence": "medium"}
     curr = {"structure_note": "mass layoffs", "event_date": "2026-04-01", "confidence": "medium"}
     assert task.detect_events(prev, curr) == []
@@ -59,7 +59,7 @@ def test_module_06_no_alert_on_same_state():
 
 def test_module_06_alerts_on_second_wave_with_later_date():
     """Same note, new event_date >=1 month later → second-wave alert."""
-    task = Module06StructuralNews()
+    task = Module05StructuralNews()
     prev = {"structure_note": "mass layoffs", "event_date": "2026-01-15", "confidence": "medium"}
     curr = {"structure_note": "mass layoffs", "event_date": "2026-04-20", "confidence": "medium"}
     events = task.detect_events(prev, curr)
@@ -68,7 +68,7 @@ def test_module_06_alerts_on_second_wave_with_later_date():
 
 
 def test_module_06_alerts_on_confidence_regression():
-    task = Module06StructuralNews()
+    task = Module05StructuralNews()
     prev = {"structure_note": "recent IPO", "event_date": "2025-11-01", "confidence": "high"}
     curr = {"structure_note": "recent IPO", "event_date": "2025-11-01", "confidence": "low"}
     events = task.detect_events(prev, curr)
@@ -78,14 +78,14 @@ def test_module_06_alerts_on_confidence_regression():
 
 def test_module_06_first_run_returns_empty():
     """No prior_output → no events (alerts trigger on TRANSITIONS only)."""
-    task = Module06StructuralNews()
+    task = Module05StructuralNews()
     assert task.detect_events(None, {"structure_note": "bankruptcy"}) == []
 
 
 def test_module_06_alerts_on_buying_frozen_transition():
     """buying_implication flipping to buying-frozen is a distinct alert path,
     even when structure_note doesn't change."""
-    task = Module06StructuralNews()
+    task = Module05StructuralNews()
     prev = {"structure_note": "merged with X", "buying_implication": "buying-friendly", "confidence": "high"}
     curr = {"structure_note": "merged with X", "buying_implication": "buying-frozen", "confidence": "high"}
     events = task.detect_events(prev, curr)
@@ -97,7 +97,7 @@ def test_module_06_alerts_on_buying_frozen_transition():
 def test_module_07_alerts_on_new_funding_round_even_with_same_tag():
     """Two `funding round` tags in a row, different summaries — that's a second
     round and must fire a new alert. The naive tag-set diff would miss this."""
-    task = Module07TriggerEvents()
+    task = Module06TriggerEvents()
     prev = {
         "triggers_detected": ["funding round"],
         "trigger_details": [
@@ -121,7 +121,7 @@ def test_module_07_alerts_on_new_funding_round_even_with_same_tag():
 
 
 def test_module_07_alerts_on_agency_switch():
-    task = Module07TriggerEvents()
+    task = Module06TriggerEvents()
     prev = {"trigger_details": []}
     curr = {
         "trigger_details": [
@@ -137,7 +137,7 @@ def test_module_07_alerts_on_agency_switch():
 def test_module_07_no_alert_for_unmapped_trigger():
     """Triggers outside _TRIGGER_TO_SIGNAL (rebrand/campaign, AI initiative)
     write to Buying Signals but do NOT fire Needs Attention alerts."""
-    task = Module07TriggerEvents()
+    task = Module06TriggerEvents()
     prev = {"trigger_details": []}
     curr = {
         "trigger_details": [
@@ -208,7 +208,7 @@ def test_module_14_no_alert_on_out_of_scope_tier1_open():
 # ---- Module 05 ----
 
 def test_module_05_alerts_on_structure_type_change():
-    task = Module05CorporateStructure()
+    task = Module04CorporateStructure()
     prev = {"structure_type": "standalone"}
     curr = {"structure_type": "subsidiary", "parent_company": "Acme Corp"}
     events = task.detect_events(prev, curr)
@@ -218,7 +218,7 @@ def test_module_05_alerts_on_structure_type_change():
 
 
 def test_module_05_no_alert_when_unchanged():
-    task = Module05CorporateStructure()
+    task = Module04CorporateStructure()
     prev = {"structure_type": "standalone"}
     curr = {"structure_type": "standalone"}
     assert task.detect_events(prev, curr) == []
@@ -300,7 +300,7 @@ def _module_06_result(output: dict[str, Any], prompt_version: str = "v1.5.0"):
     """Build a synthetic TaskResult for module_06 with a given output."""
     from tasks.base import TaskResult
     return TaskResult(
-        task_name="module_06_structural_news",
+        task_name="module_05_structural_news",
         output=output, confidence=output.get("confidence", "medium"),
         fields={}, page_blocks=[],
         section="News", subsection=None,
@@ -321,7 +321,7 @@ def test_orchestrator_collects_detected_events_in_outcome(tmp_path):
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
     freshness = {
-        ("p1", "module_06_structural_news"): {
+        ("p1", "module_05_structural_news"): {
             "started_at": _iso(datetime.now(timezone.utc) - timedelta(days=10)),
             "output_json": json.dumps({"structure_note": "recent IPO",
                                         "event_date": "2025-12-01",
@@ -339,7 +339,7 @@ def test_orchestrator_collects_detected_events_in_outcome(tmp_path):
         "sources": ["https://example.com/news"],
     })
     events = orch._collect_detected_events(
-        account, [Module06StructuralNews()], [result], freshness,
+        account, [Module05StructuralNews()], [result], freshness,
     )
     signals = {e.signal_type for e in events}
     assert "bankruptcy" in signals
@@ -353,7 +353,7 @@ def test_orchestrator_skips_diff_on_prompt_version_drift(tmp_path):
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
     freshness = {
-        ("p1", "module_06_structural_news"): {
+        ("p1", "module_05_structural_news"): {
             "started_at": _iso(datetime.now(timezone.utc) - timedelta(days=10)),
             "output_json": json.dumps({"structure_note": "recent IPO", "confidence": "high"}),
             "prompt_version": "v1.4.0",  # older
@@ -365,7 +365,7 @@ def test_orchestrator_skips_diff_on_prompt_version_drift(tmp_path):
         prompt_version="v1.5.0",
     )
     events = orch._collect_detected_events(
-        account, [Module06StructuralNews()], [result], freshness,
+        account, [Module05StructuralNews()], [result], freshness,
     )
     assert events == []
 
@@ -378,6 +378,6 @@ def test_orchestrator_first_run_no_events(tmp_path):
                       priority_type="Priority A", last_researched=None)
     result = _module_06_result({"structure_note": "bankruptcy", "confidence": "high", "sources": []})
     events = orch._collect_detected_events(
-        account, [Module06StructuralNews()], [result], {},
+        account, [Module05StructuralNews()], [result], {},
     )
     assert events == []

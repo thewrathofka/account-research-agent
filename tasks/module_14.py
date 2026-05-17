@@ -48,7 +48,7 @@ class Module14HiringSignal(Task):
         authoritatively to ats_jobs instead of relying on name-derived
         heuristics that miss for companies whose slug ≠ brand name."""
         gate = context.get("module_01_gate") or {}
-        news = context.get("module_06_structural_news") or {}
+        news = context.get("module_05_structural_news") or {}
         rp = context.get("research_pass") or {}
         prior: list[str] = []
 

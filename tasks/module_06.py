@@ -1,163 +1,119 @@
-"""Module 6 — Structural news (last 6 months). Output → Structure Notes property + News page section."""
+"""Module 6 — Trigger events (last 90 days).
+
+Output:
+- Buying Signals multi-select (the detected trigger tags — 2026-05-11 role swap)
+- News page section: one bullet per trigger + a per-signal subsection appended
+  under News by the orchestrator (heading + logic + sources)
+"""
 
 from __future__ import annotations
 
-from datetime import date as _date
 from typing import Any
 
 import crm
-import prompts.module_06_structural_news as prompt
+import prompts.module_06_trigger_events as prompt
 from tasks.base import DetectedEvent, Task
 
 
-# Mapping from the constrained structure_note vocabulary to the NEEDS_ATTENTION
-# signal tag. structure_notes not in this map are non-alerting (positive but
-# not load-bearing, e.g. "buying-friendly" alone — wait until severity 2+).
-_STRUCTURE_NOTE_SEVERITY: dict[str, tuple[int, str]] = {
-    # (severity, signal_type). Higher severity = stronger alert. Alert fires
-    # when curr severity > prev severity (or prev is None).
-    "recent IPO":      (2, "M&A"),
-    "about to IPO":    (2, "M&A"),
-    "merged with X":   (2, "M&A"),
-    "acquired X":      (2, "M&A"),
-    "acquired by X":   (2, "M&A"),
-    "split from X":    (2, "M&A"),
-    "mass layoffs":    (3, "layoffs"),
-    "bankruptcy":      (4, "bankruptcy"),
-    "out of business": (4, "bankruptcy"),
-    "buying-frozen":   (3, "structure-ambiguous"),
+# Trigger name → NEEDS_ATTENTION signal tag. Triggers absent from this map
+# write to Buying Signals but do NOT fire a Needs Attention alert (rebrand/
+# campaign and AI initiative are softer signals).
+_TRIGGER_TO_SIGNAL: dict[str, str] = {
+    "funding round": "funding",
+    "agency switch": "agency-switch",
+    "active creative jobs": "senior-hire",
 }
 
 
-def _severity(note: str | None) -> int:
-    if not note:
-        return 0
-    return _STRUCTURE_NOTE_SEVERITY.get(note, (1, ""))[0]
+def _trigger_signature(trigger: str, detail: dict[str, Any]) -> str:
+    """Stable signature for diffing trigger_details. Uses URL when available
+    (most stable across reruns), otherwise first 24 chars of summary."""
+    url = (detail.get("url") or "").strip()
+    if url:
+        return f"module_06:{trigger}:url:{url}"
+    summary = (detail.get("summary") or "").strip()[:24].lower()
+    return f"module_06:{trigger}:summary:{summary}"
 
 
-class Module06StructuralNews(Task):
-    name = "module_06_structural_news"
+class Module06TriggerEvents(Task):
+    name = "module_06_trigger_events"
     section = "News"
     subsection = None
     prompt_module = prompt
-    model_tier = "fast"  # news lookup; Haiku/mini handles fine
     synthesis_only = True   # reads ResearchPass output, no own tools
+    model_tier = "fast"     # 2026-05-12 cost-cutting: trigger detection (funding /
+                            # rebrand / agency switch / AI initiative) is keyword-
+                            # adjacent extraction from research_pass, Haiku handles
 
     def to_fields(self, output: dict[str, Any]) -> dict[str, Any]:
-        fields: dict[str, Any] = {}
-        note = output.get("structure_note")
-        if note:
-            fields[crm.PROP_STRUCTURE_NOTES] = {
-                "rich_text": [{"type": "text", "text": {"content": note}}]
+        triggers = output.get("triggers_detected") or []
+        if not triggers:
+            return {}
+        # Filter against the canonical vocab so a stray label can't poison the
+        # multi-select payload.
+        valid = [t for t in triggers if t in crm.BUYING_SIGNAL_OPTIONS]
+        if not valid:
+            return {}
+        return {
+            crm.PROP_BUYING_SIGNALS: {
+                "multi_select": [{"name": t} for t in valid],
             }
-        return fields
+        }
 
     def to_blocks(self, output: dict[str, Any]) -> list[dict[str, Any]]:
-        note = output.get("structure_note")
-        if not note:
-            return [crm.paragraph("No significant structural events in the last 6 months.")]
+        details = output.get("trigger_details") or []
+        if not details:
+            return [crm.paragraph("No buying-signal triggers detected in the last 90 days.")]
+        blocks: list[dict[str, Any]] = [crm.paragraph("Buying signals (last 90 days):")]
+        for d in details:
+            trigger = d.get("trigger", "?")
+            summary = d.get("summary", "")
+            blocks.append(crm.bullet(f"{trigger}: {summary}"))
+        return blocks
 
-        summary = output.get("event_summary") or note
-        date_str = output.get("event_date")
-        implication = output.get("buying_implication")
-
-        text = f"{note.title()}: {summary}"
-        if date_str:
-            text += f" ({date_str})"
-        if implication:
-            text += f" — {implication}"
-        return [crm.paragraph(text)]
+    def to_signal_sections(self, output: dict[str, Any]) -> list[dict[str, Any]]:
+        details = output.get("trigger_details") or []
+        sections: list[dict[str, Any]] = []
+        for d in details:
+            trigger = d.get("trigger")
+            if trigger not in crm.BUYING_SIGNAL_OPTIONS:
+                continue
+            summary = d.get("summary") or ""
+            per_url = d.get("url")
+            sources = [per_url] if per_url else list(output.get("sources") or [])
+            sections.append({"signal": trigger, "logic": summary, "sources": sources})
+        return sections
 
     def detect_events(
         self,
         prev_output: dict[str, Any] | None,
         curr_output: dict[str, Any] | None,
     ) -> list[DetectedEvent]:
+        """Diff per-trigger by URL/summary rather than by tag set — a second
+        funding round shows the same `funding round` tag but a different
+        summary, and that IS a new event."""
         if prev_output is None or curr_output is None:
             return []
+        prev_details = prev_output.get("trigger_details") or []
+        curr_details = curr_output.get("trigger_details") or []
+        prev_sigs = {
+            _trigger_signature(d.get("trigger") or "", d) for d in prev_details
+        }
         events: list[DetectedEvent] = []
-
-        # 1. structure_note transition to higher severity.
-        prev_note = prev_output.get("structure_note")
-        curr_note = curr_output.get("structure_note")
-        if curr_note and _severity(curr_note) > _severity(prev_note):
-            signal_type = _STRUCTURE_NOTE_SEVERITY.get(curr_note, (0, ""))[1]
-            if signal_type:
-                summary = (
-                    f"Structural state shifted to '{curr_note}'"
-                    + (f": {curr_output.get('event_summary')}" if curr_output.get("event_summary") else "")
-                )
-                source_url = _first_source(curr_output)
-                # Signature includes event_date when present so a *second* wave
-                # (same note, later date) doesn't dedup against the first.
-                event_date = curr_output.get("event_date") or ""
-                signature = f"module_06:structure_note:{curr_note}:{event_date}"
-                events.append(DetectedEvent(
-                    account_page_id="",  # filled in by orchestrator
-                    module=self.name, signal_type=signal_type,
-                    summary=summary, source_url=source_url, signature=signature,
-                ))
-
-        # 2. buying_implication transition to buying-frozen — the buying window
-        # is closing. Distinct alert from the structure_note path because the
-        # implication can flip independently (e.g. M&A → buying-frozen for the
-        # acquiring side, buying-friendly for the spun-off side).
-        prev_impl = prev_output.get("buying_implication")
-        curr_impl = curr_output.get("buying_implication")
-        if curr_impl == "buying-frozen" and prev_impl != "buying-frozen":
-            signature = f"module_06:buying_frozen:{curr_output.get('event_date') or ''}"
+        for d in curr_details:
+            trigger = d.get("trigger") or ""
+            if trigger not in _TRIGGER_TO_SIGNAL:
+                continue
+            sig = _trigger_signature(trigger, d)
+            if sig in prev_sigs:
+                continue
+            summary = (d.get("summary") or "").strip() or trigger
             events.append(DetectedEvent(
                 account_page_id="",
-                module=self.name, signal_type="structure-ambiguous",
-                summary="Buying window closing: implication flipped to buying-frozen.",
-                source_url=_first_source(curr_output), signature=signature,
+                module=self.name,
+                signal_type=_TRIGGER_TO_SIGNAL[trigger],
+                summary=f"{trigger}: {summary[:240]}",
+                source_url=d.get("url"),
+                signature=sig,
             ))
-
-        # 3. Same note, much later event_date — second wave of the same event
-        # type (e.g. two rounds of layoffs at different dates).
-        if (curr_note and prev_note == curr_note
-                and curr_output.get("event_date") and prev_output.get("event_date")):
-            if _months_apart(prev_output["event_date"], curr_output["event_date"]) >= 1:
-                signal_type = _STRUCTURE_NOTE_SEVERITY.get(curr_note, (0, ""))[1]
-                if signal_type:
-                    signature = f"module_06:second_wave:{curr_note}:{curr_output['event_date']}"
-                    events.append(DetectedEvent(
-                        account_page_id="",
-                        module=self.name, signal_type=signal_type,
-                        summary=(
-                            f"Second '{curr_note}' event ({curr_output['event_date']}); "
-                            f"prior was {prev_output['event_date']}."
-                        ),
-                        source_url=_first_source(curr_output), signature=signature,
-                    ))
-
-        # 4. Confidence regression — high → low on the same module suggests the
-        # world changed enough that the model can't classify it.
-        if (prev_output.get("confidence") == "high"
-                and curr_output.get("confidence") == "low"):
-            today_iso = _date.today().isoformat()
-            signature = f"module_06:confidence_regression:{today_iso}"
-            events.append(DetectedEvent(
-                account_page_id="",
-                module=self.name, signal_type="structure-ambiguous",
-                summary="Structural classification dropped from high to low confidence — manual review.",
-                source_url=None, signature=signature,
-            ))
-
         return events
-
-
-def _first_source(output: dict[str, Any]) -> str | None:
-    sources = output.get("sources") or []
-    return sources[0] if sources else None
-
-
-def _months_apart(iso_a: str, iso_b: str) -> int:
-    """Rough month-distance between two ISO dates. Returns 0 on parse error."""
-    try:
-        a = _date.fromisoformat(iso_a[:10])
-        b = _date.fromisoformat(iso_b[:10])
-    except (ValueError, TypeError):
-        return 0
-    diff_days = abs((b - a).days)
-    return diff_days // 30

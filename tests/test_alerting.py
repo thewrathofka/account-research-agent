@@ -109,7 +109,7 @@ def _make_orch(rl, crm):
 
 def _ev(signature: str = "sig:x", signal_type: str = "bankruptcy") -> DetectedEvent:
     return DetectedEvent(
-        account_page_id="p1", module="module_06_structural_news",
+        account_page_id="p1", module="module_05_structural_news",
         signal_type=signal_type, summary="An event happened.",
         signature=signature, source_url="https://example.com/news",
     )
@@ -180,7 +180,7 @@ def test_filter_handles_get_ack_failure_gracefully(tmp_path):
 
 # ---- Writeback alerting integration ----
 
-def _result(task_name="module_06_structural_news") -> TaskResult:
+def _result(task_name="module_05_structural_news") -> TaskResult:
     """Minimal valid TaskResult for writeback testing."""
     return TaskResult(
         task_name=task_name, output={}, confidence="high",
@@ -197,9 +197,9 @@ def test_writeback_sets_needs_attention_tags_from_events(tmp_path):
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
     events = [
-        DetectedEvent(account_page_id="p1", module="module_06_structural_news",
+        DetectedEvent(account_page_id="p1", module="module_05_structural_news",
                       signal_type="bankruptcy", summary="...", signature="s1"),
-        DetectedEvent(account_page_id="p1", module="module_07_trigger_events",
+        DetectedEvent(account_page_id="p1", module="module_06_trigger_events",
                       signal_type="funding", summary="...", signature="s2"),
     ]
     write_account_outcome(
@@ -219,9 +219,9 @@ def test_writeback_posts_exactly_one_comment_per_event_list(tmp_path):
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
     events = [
-        DetectedEvent(account_page_id="p1", module="module_06_structural_news",
+        DetectedEvent(account_page_id="p1", module="module_05_structural_news",
                       signal_type="bankruptcy", summary="Chapter 7 filed", signature="s1"),
-        DetectedEvent(account_page_id="p1", module="module_06_structural_news",
+        DetectedEvent(account_page_id="p1", module="module_05_structural_news",
                       signal_type="structure-ambiguous", summary="Buying window closing",
                       signature="s2"),
     ]
@@ -260,7 +260,7 @@ def test_writeback_drops_unknown_signal_types():
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
     events = [
-        DetectedEvent(account_page_id="p1", module="module_06_structural_news",
+        DetectedEvent(account_page_id="p1", module="module_05_structural_news",
                       signal_type="some-future-signal", summary="x", signature="s1"),
     ]
     write_account_outcome(
@@ -287,7 +287,7 @@ def test_writeback_continues_when_comment_fails():
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
     events = [
-        DetectedEvent(account_page_id="p1", module="module_06_structural_news",
+        DetectedEvent(account_page_id="p1", module="module_05_structural_news",
                       signal_type="bankruptcy", summary="Chapter 7", signature="s1"),
     ]
     wrote = write_account_outcome(

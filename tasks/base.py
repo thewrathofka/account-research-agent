@@ -74,7 +74,7 @@ class DetectedEvent:
 
     Fields:
     - account_page_id: which Notion page the alert is for
-    - module: the task that detected the transition (e.g. "module_06_structural_news")
+    - module: the task that detected the transition (e.g. "module_05_structural_news")
     - signal_type: short tag matching crm.NEEDS_ATTENTION_OPTIONS (e.g. "bankruptcy")
     - summary: 1-2 sentence human-readable description of what changed
     - source_url: optional canonical source for the alert (often a citation URL)

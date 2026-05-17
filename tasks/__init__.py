@@ -12,9 +12,9 @@ from tasks.base import Task, TaskResult
 from tasks.module_01 import Module01Gate
 from tasks.module_02 import Module02RevenueModel
 from tasks.module_03 import Module03PainPoints
-from tasks.module_05 import Module05CorporateStructure
-from tasks.module_06 import Module06StructuralNews
-from tasks.module_07 import Module07TriggerEvents
+from tasks.module_04 import Module04CorporateStructure
+from tasks.module_05 import Module05StructuralNews
+from tasks.module_06 import Module06TriggerEvents
 from tasks.module_09 import Module09CreativeReality
 from tasks.module_10 import Module10AdLibrary
 from tasks.module_12 import Module12CompetitorSnapshot
@@ -29,9 +29,9 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "module_01_gate": Module01Gate,
     "module_02_revenue_model": Module02RevenueModel,
     "module_03_pain_points": Module03PainPoints,
-    "module_05_corporate_structure": Module05CorporateStructure,
-    "module_06_structural_news": Module06StructuralNews,
-    "module_07_trigger_events": Module07TriggerEvents,
+    "module_04_corporate_structure": Module04CorporateStructure,
+    "module_05_structural_news": Module05StructuralNews,
+    "module_06_trigger_events": Module06TriggerEvents,
     "module_09_creative_reality": Module09CreativeReality,
     "module_10_ad_library": Module10AdLibrary,
     "module_12_competitor_snapshot": Module12CompetitorSnapshot,
@@ -49,9 +49,9 @@ PHASE1_TASKS = [
     "module_01_gate",
     "research_pass",
     "module_02_revenue_model",
-    "module_05_corporate_structure",
-    "module_06_structural_news",
-    "module_07_trigger_events",
+    "module_04_corporate_structure",
+    "module_05_structural_news",
+    "module_06_trigger_events",
     "module_09_creative_reality",
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
@@ -67,9 +67,9 @@ PHASE2_TASKS = [
     "module_01_gate",
     "research_pass",
     "module_02_revenue_model",
-    "module_05_corporate_structure",
-    "module_06_structural_news",
-    "module_07_trigger_events",
+    "module_04_corporate_structure",
+    "module_05_structural_news",
+    "module_06_trigger_events",
     "module_09_creative_reality",
     "module_10_ad_library",
     "module_12_competitor_snapshot",
@@ -98,8 +98,8 @@ GATE_TASKS: set[str] = {"module_01_gate"}
 DAILY_TASKS = [
     "module_01_gate",
     "research_pass",
-    "module_06_structural_news",
-    "module_07_trigger_events",
+    "module_05_structural_news",
+    "module_06_trigger_events",
     "module_14_hiring_signal",
 ]
 
@@ -130,7 +130,7 @@ QUARTERLY_TASKS = [
     "module_01_gate",
     "research_pass",
     "module_02_revenue_model",
-    "module_05_corporate_structure",
+    "module_04_corporate_structure",
     "module_12_competitor_snapshot",
 ]
 
