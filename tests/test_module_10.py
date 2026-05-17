@@ -331,3 +331,64 @@ def test_task_to_signal_sections_is_empty() -> None:
     """Module 10 doesn't contribute Buying Signals tags."""
     task = Module10AdLibrary()
     assert task.to_signal_sections({"platforms": []}) == []
+
+
+# ---- Slug-discovery integration (v6, 2026-05-17) ----
+
+def test_ad_scraper_tool_version_bumped_to_v6() -> None:
+    """v6 bump invalidates cached LinkedIn payloads keyed on the bad
+    research_pass hint URL (e.g. cached Miro runs using /miro/ instead of
+    /mirohq/)."""
+    from tools.apify_ad_scraper import APIFY_TOOL_VERSION
+    assert APIFY_TOOL_VERSION == "apify_ad_scraper_v6"
+
+
+def test_ad_scraper_discover_linkedin_returns_hint_when_no_websearch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a Tavily client wired, _discover_linkedin degrades to the
+    LLM-picked hint URL rather than blowing up. Used by tests + by production
+    callers that don't have TAVILY_API_KEY set."""
+    import config as _config
+    from tools.apify_ad_scraper import ApifyAdScraperTool
+    monkeypatch.setattr(_config, "TAVILY_API_KEY", None)
+    tool = ApifyAdScraperTool(web_search_tool=None)
+    out = tool._discover_linkedin("Miro", "https://www.linkedin.com/company/miro/")
+    assert out.url == "https://www.linkedin.com/company/miro/"
+    assert out.source == "hint"
+
+
+def test_ad_scraper_render_includes_linkedin_discovery_lines() -> None:
+    """When the LinkedIn discovery is present, the rendered output surfaces
+    `linkedin_discovery_source` / `linkedin_discovery_confidence` / URL lines
+    so they land in runs.db for debugging."""
+    from tools.apify_ad_scraper import _render_results
+    from tools.linkedin_slug import SlugDiscovery
+
+    disc = SlugDiscovery(
+        url="https://www.linkedin.com/company/mirohq/",
+        source="tavily_scored",
+        confidence=0.85,
+        candidates_scored=[("https://www.linkedin.com/company/mirohq/", 110)],
+    )
+    text = _render_results(
+        "linkedin", "Miro", "US", items=[], used_canonical=True,
+        linkedin_discovery=disc,
+    )
+    assert "linkedin_discovery_source: tavily_scored" in text
+    assert "linkedin_discovery_confidence: 0.85" in text
+    assert "linkedin_discovery_url: https://www.linkedin.com/company/mirohq/" in text
+
+
+def test_ad_scraper_render_omits_discovery_lines_for_non_linkedin_platform() -> None:
+    """Meta + TikTok renders should not include the LinkedIn-specific
+    discovery lines — they apply only to the LinkedIn slug-discovery path."""
+    from tools.apify_ad_scraper import _render_results
+    from tools.linkedin_slug import SlugDiscovery
+
+    disc = SlugDiscovery(url=None, source="name_fallback", confidence=0.0)
+    text = _render_results(
+        "meta", "Miro", "US", items=[], used_canonical=False,
+        linkedin_discovery=disc,
+    )
+    assert "linkedin_discovery_source" not in text

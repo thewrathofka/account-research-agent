@@ -140,6 +140,12 @@ class Task:
     # shared research context. Saves ~50-70% per task vs the full agent loop.
     synthesis_only: bool = False
 
+    # If True, the orchestrator skips this task on every cadence run after its
+    # first non-error success for a given account, replaying the cached
+    # output_json from runs.db. Use for one-time gates (e.g. size, persona
+    # headcount) — facts that don't drift account-by-account once established.
+    run_once: bool = False
+
     def build_tools(self) -> list[Tool]:
         """Return fresh Tool instances for this run (per-task call counters)."""
         return []

@@ -208,12 +208,44 @@ v0.0 behaviour for offline replay.
 
 Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 
-### 1. Size + EU/NA gate (GATE)
-- Verify employee count; confirm operational presence in EU and/or NA.
+### 1. Size + region gate (GATE, run-once)
+- Verify employee count; confirm operational presence in EU / UK / Norway /
+  Switzerland / NA.
 - **Output:** Notion `Size` property (`<1000` / `1000-2000` / `2000-5000` / `5000+`).
-- **GATE:** if neither EU nor NA, write *"No operations in EU or NA."* to notes,
+- **GATE:** if no in-scope region, write *"No in-scope operations."* to notes,
   set `Research Status = out_of_scope`, **halt all subsequent modules.**
+- **Run-once:** skipped on every subsequent run for the same account
+  (`Task.run_once = True`; cached output replayed from `runs.db`).
 - Tool: Tavily (light — verifying existing CRM data, not deep research).
+
+### 2. Persona-headcount gate (GATE, run-once)
+- Count marketing / creative / brand employees on LinkedIn, restricted to
+  NA / EU / UK / Norway / Switzerland.
+- **Output:** Notion `In-Scope Headcount` (number) — sortable BDR signal +
+  "M2 has run" marker for the CRM.
+- **GATE:** if fewer than `PERSONA_GATE_MIN_HEADCOUNT` (default 5) in-scope
+  staff, set `Research Status = out_of_scope`, **halt all subsequent
+  modules.** Apify infra failures route to `needs_review` instead (gate
+  refuses to decide without real data).
+- **Run-once:** skipped on every subsequent run via the same `Task.run_once`
+  mechanism as M1. Re-trigger by manually deleting the M2 row from
+  `runs.db` task_runs.
+- **Persona scope:** medium / Superside-relevant — title contains any of
+  {marketing, marketer, growth, demand gen, product marketing, campaign,
+  performance marketing, creative, designer, design, art director, video,
+  production, producer, motion, content, brand, communications, comms,
+  social, social media}. Priority order brand > creative > marketing
+  ("Brand Designer" → brand).
+- **Geo scope:** location contains any of {UK + common cities, Norway,
+  Switzerland + cities, NA = US/Canada/Mexico + common US metros, 27 EU
+  member states}.
+- **Cap:** `IN_SCOPE_HEADCOUNT_MAX_RESULTS` profiles per account (default
+  250). Above this, count is reported as a floor with `truncated_at_cap = true`.
+- **Cost:** $0.40–0.50 per account (harvestapi $4/1000 + $0.02 start fee).
+- Tool: Apify (`harvestapi/linkedin-company-employees`, cookie-free, 2500/query cap).
+  Tool also runs deterministic Tavily-based slug discovery before the Apify
+  call (`tools/linkedin_slug.py`) so a bad `research_pass.linkedin_company_url`
+  hint can't poison the count.
 
 ### 3. How they make money
 - Revenue model + primary customer segment + primary products/SKUs.
@@ -289,10 +321,15 @@ Numbered as Kali specified. Items removed from MVP are listed at the bottom.
 - Tool: jobspy + LinkedIn jobs (Apify, optional) + Tavily news.
 
 ### Modules removed from MVP
-- **2** persona-relevant people count (Apify LinkedIn employee scraper — too expensive)
-- **8** buying committee (depended on 2)
+- **8** buying committee (depended on per-employee data the lean M2 doesn't capture)
 - **11** top contact deep-dives (depended on 8)
 - **"New marketing/brand/creative leader (last 90 days)"** sub-trigger of module 7
+
+### Module 2 — revived 2026-05-15
+Originally cut because the spec called for per-employee tenure/seniority data
+that was too expensive on Apify. Brought back as a lean **gate** (not a
+research module): just a count, deterministic title + geo filtering inside
+the tool, one-time per account. See section 2 above.
 
 ---
 

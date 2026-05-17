@@ -60,6 +60,13 @@ class Module10AdLibrary(Task):
         # they anchor the query on the exact advertiser instead of free-text
         # name matching, which is how WIRED / Miro / Mendix etc. previously
         # picked up ads from unrelated companies sharing the brand keyword.
+        #
+        # TODO (2026-05-17): the LinkedIn URL here is now a HINT only — the
+        # ad-scraper tool runs deterministic Tavily-based slug discovery and
+        # overrides this value when needed. Facebook + TikTok still trust the
+        # LLM-picked value; if those start failing the same way (model
+        # hallucinating slugs for ambiguous brands), port the discovery
+        # helper at tools/linkedin_slug.py to FB / TT.
         linkedin_url = rp.get("linkedin_company_url")
         facebook_url = rp.get("facebook_page_url")
         tiktok_handle = rp.get("tiktok_handle")

@@ -58,6 +58,41 @@ def _validate_label(label: str | None) -> str | None:
     return label
 
 
+def _parse_rerun(entries: list[str] | None) -> dict[str, str]:
+    """Parse repeated `--rerun TASK:ACCOUNT_SUBSTRING` flags → {task: substring}.
+
+    Surgical bypass for run-once gates that cached a wrong answer (e.g. Miro's
+    M2 row from 2026-05-15 with confidence=high, total=0 from the bad slug).
+    `--rerun "module_02_persona_gate:Miro"` forces the gate to re-run for any
+    account whose name (lowercased) contains "miro". Other accounts replay
+    their cached row normally.
+    """
+    if not entries:
+        return {}
+    out: dict[str, str] = {}
+    for entry in entries:
+        entry = entry.strip()
+        if not entry:
+            continue
+        if ":" not in entry:
+            raise argparse.ArgumentTypeError(
+                f"--rerun entry {entry!r} must be `task_name:ACCOUNT_SUBSTRING`."
+            )
+        name, substr = entry.split(":", 1)
+        name = name.strip()
+        substr = substr.strip()
+        if name not in TASK_REGISTRY:
+            raise argparse.ArgumentTypeError(
+                f"--rerun: unknown task {name!r}. Known: {sorted(TASK_REGISTRY)}"
+            )
+        if not substr:
+            raise argparse.ArgumentTypeError(
+                f"--rerun: {name}: needs a non-empty account substring."
+            )
+        out[name] = substr
+    return out
+
+
 def _parse_module_since(spec: str | None) -> dict[str, int]:
     """Parse `--module-since "module_NN:DAYS,module_MM:DAYS"` → {name: days}.
 
@@ -120,6 +155,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         "successful row within the threshold are skipped; the "
                         "prior output is injected into the context envelope "
                         "for downstream tasks. Modules not listed run normally.")
+    p.add_argument("--rerun", action="append", default=None, metavar="TASK:ACCOUNT",
+                   help="Surgically force a (task, account) pair to bypass "
+                        "the run-once skip rule. Format: "
+                        "`module_02_persona_gate:Miro`. Repeatable. "
+                        "ACCOUNT is a case-insensitive substring match against "
+                        "the Notion account title. Only the matching task on "
+                        "matching accounts re-runs; everything else replays "
+                        "cached output as usual. Use to invalidate a single "
+                        "wrong cached gate decision without disrupting the "
+                        "rest of the batch.")
     from tasks import PHASE2_TASKS as _default_tasks
     p.add_argument("--tasks", default=",".join(_default_tasks),
                    help=(
@@ -214,6 +259,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Phase A: parse --module-since "module_NN:DAYS,module_MM:DAYS" → dict.
     module_since = _parse_module_since(args.module_since)
+    rerun = _parse_rerun(args.rerun)
+    if rerun:
+        print(f"Rerun overrides: {rerun}")
 
     # Stamp the run boundary BEFORE work begins so the cost summary can filter
     # task_runs rows to just-this-batch (vs lifetime totals).
@@ -229,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         orch = Orchestrator(crm=crm, run_log=run_log, provider=provider,
                             concurrency=args.concurrency, label=args.label,
-                            module_since=module_since)
+                            module_since=module_since, rerun=rerun)
         outcomes = orch.run(accounts, task_names, dry_run=args.dry_run)
 
     print("\n--- Summary ---")

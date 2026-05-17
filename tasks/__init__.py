@@ -80,6 +80,8 @@ PHASE2_TASKS = [
 
 # Tasks that act as gates — if their gate_passes() returns False, downstream
 # tasks for that account are skipped. The orchestrator inspects this set.
+# Both gates are run-once: see Task.run_once + orchestrator's
+# _should_skip_for_freshness branch that consults runs.db for prior success.
 GATE_TASKS: set[str] = {"module_01_gate"}
 
 

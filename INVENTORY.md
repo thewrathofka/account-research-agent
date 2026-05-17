@@ -37,36 +37,52 @@ this file if they ever diverge.
 **Task registry order** (`tasks/__init__.py:25`, dict insertion order):
 1. `company_overview` (legacy)
 2. `research_pass`
-3. `module_01_gate`
-4. `module_03_revenue_model`
-5. `module_04_pain_points`
-6. `module_05_corporate_structure`
-7. `module_06_structural_news`
-8. `module_07_trigger_events`
-9. `module_09_creative_reality`
-10. `module_10_ad_library`
-11. `module_12_competitor_snapshot`
-12. `module_13_industry_pulse`
-13. `module_14_hiring_signal`
+3. `module_01_gate` (gate, run-once)
+4. `module_02_persona_gate` (gate, run-once)
+5. `module_03_revenue_model`
+6. `module_04_pain_points`
+7. `module_05_corporate_structure`
+8. `module_06_structural_news`
+9. `module_07_trigger_events`
+10. `module_09_creative_reality`
+11. `module_10_ad_library`
+12. `module_12_competitor_snapshot`
+13. `module_13_industry_pulse`
+14. `module_14_hiring_signal`
 
 **`PHASE2_TASKS` execution order** (the recommended live order,
 `tasks/__init__.py:65`) — this is what actually runs end-to-end:
 
 ```
-module_01_gate → research_pass → module_03 → module_05 → module_06 →
-module_07 → module_09 → module_10 → module_12 → module_13 → module_14 →
-module_04_pain_points
+module_01_gate → research_pass → module_02_persona_gate → module_03 →
+module_05 → module_06 → module_07 → module_09 → module_10 → module_12 →
+module_13 → module_14 → module_04_pain_points
 ```
 
-Module 04 runs **last** because it synthesizes from `research_pass` +
-`module_01` + `module_03` + `module_12` (`tasks/module_04.py:27`,
-`ANCHOR_MODULES`).
+Module 02 runs **third** (after `research_pass` so it can use the canonical
+`linkedin_company_url` for precise scraping). Module 04 runs **last** because
+it synthesizes from `research_pass` + `module_01` + `module_03` + `module_12`
+(`tasks/module_04.py:27`, `ANCHOR_MODULES`).
 
-**Gate halt.** `GATE_TASKS = {"module_01_gate"}` (`tasks/__init__.py:82`). If
-`Module01Gate.gate_passes()` returns False (i.e.
-`output["operates_in_eu_or_na"]` is False), `_process_account` breaks the loop
-and calls `_handle_gate_failure` (`orchestrator.py:157`), which delegates to
-`writeback.write_gate_failure_to_notion`.
+**Gate halt.** `GATE_TASKS = {"module_01_gate", "module_02_persona_gate"}`
+(`tasks/__init__.py:82`). On EITHER gate's `gate_passes()` returning False,
+`_process_account` breaks the loop and calls `_handle_gate_failure`
+(`orchestrator.py:157`), which delegates to
+`writeback.write_gate_failure_to_notion`:
+- M1: fails when `output["operates_in_scope"]` is False (no EU/UK/Norway/
+  Switzerland/NA operations).
+- M2: fails when `output["total"] < PERSONA_GATE_MIN_HEADCOUNT` (default 5)
+  AND `infra_ok=True`. Infra failures (no API key, Apify error) do NOT
+  trigger out_of_scope — `gate_passes()` returns True on `infra_ok=False`
+  so the account routes to `needs_review` via the confidence aggregator.
+
+**Run-once gates.** Both `module_01_gate` and `module_02_persona_gate` set
+`Task.run_once = True`. The orchestrator's `_maybe_skip_fresh` consults
+`runs.db` task_runs at start-of-task; if a prior successful run exists for
+the (account, task) pair, the gate is skipped and its cached `output_json`
+is replayed into the context envelope + page-body writeback. Once these
+gates pass for an account, they never run again unless their task_run row
+is manually deleted.
 
 **Model tiers — TWO tiers exist per provider** (`config.py:63-74`):
 - Anthropic: smart = `claude-sonnet-4-6`, fast = `claude-haiku-4-5`
@@ -81,11 +97,12 @@ default `"smart"` from `tasks/base.py:109`):
 - **smart tier**: `research_pass`, `module_01_gate`, `module_09_creative_reality`,
   `module_10_ad_library`, `module_14_hiring_signal` (all tool-using; default
   not overridden).
-- **fast tier**: `module_03_revenue_model`, `module_04_pain_points`,
-  `module_05_corporate_structure`, `module_06_structural_news`,
-  `module_07_trigger_events`, `module_12_competitor_snapshot`,
-  `module_13_industry_pulse` (all `synthesis_only = True`; cost-cut on
-  2026-05-12).
+- **fast tier**: `module_02_persona_gate` (tool-using but the tool does all
+  classification work — LLM only routes + echoes), `module_03_revenue_model`,
+  `module_04_pain_points`, `module_05_corporate_structure`,
+  `module_06_structural_news`, `module_07_trigger_events`,
+  `module_12_competitor_snapshot`, `module_13_industry_pulse` (the rest are
+  `synthesis_only = True`; cost-cut on 2026-05-12).
 
 **Synthesis-only vs tool-using.** `Task.synthesis_only = True` → `max_iter = 1`,
 no tools, single LLM call, reads `context["research_pass"]["raw_research"]`
@@ -102,6 +119,7 @@ Notion drifts.
 |---|---|---|---|---|
 | `Account Name` | title | (input only) | — | never (read only) |
 | `Size` | select | `module_01_gate` (`tasks/module_01.py:60`) | `<1000`, `1000-2000`, `2000-5000`, `5000+` | every successful gate; bucketed from integer estimate via `size_bucket()` |
+| `In-Scope Headcount` | number | `module_02_persona_gate` (`tasks/module_02.py:to_fields`) | — | only when the gate ran with `infra_ok=True` (real Apify result); skipped on infra failures so a needs_review run doesn't overwrite a real prior count |
 | `Buying Signals` | multi_select | `module_07` + `module_13` + `module_14` | `funding round`, `active creative jobs`, `rebrand/campaign`, `agency switch`, `AI initiative`, `industry movement`, `hiring`, `downsizing` (`crm.py:45`) | always present in payload — `writeback.build_property_payload` defaults to empty `multi_select` so stale tags clear on rerun (`writeback.py:144`) |
 | `Buying Intent` | multi_select | — | (human-only) | **never written by agent** (2026-05-11 role swap; `crm.py:50`) |
 | `Pain Point Tags` | multi_select | `module_04_pain_points` (`tasks/module_04.py:101`) | `creative production`, `localization`, `new territory`, `strategy`, `audience education`, `competitive displacement`, `brand evolution`, `launch surge`, `AI receptivity`, `post-layoff overflow` (`crm.py:57`) | every M4 run (empty list valid → clears stale) |
@@ -135,7 +153,8 @@ Headings are emitted in order by `_research_section_blocks` in
    - `module_01_gate` paragraph (size band · employee count · regions)
    - `module_03_revenue_model` paragraph (summary)
    - `module_05_corporate_structure` paragraph
-   - **heading_3 `Overview — Headcount`** → `module_14_hiring_signal` summary + important-roles bullets
+   - **heading_3 `Overview — In-Scope Team`** → `module_02_persona_gate` total + per-function bullet + per-region bullet + sample-titles bullet (one-time snapshot replayed from cache on subsequent runs)
+   - **heading_3 `Overview — Headcount`** → `module_14_hiring_signal` summary + important-roles bullets (dynamic; refreshed per cadence)
 3. **heading_3 `Possible Pain Points`** → `module_04_pain_points` (intro paragraph + per-pain bullets + `Pain tags: …` bullet)
 4. **heading_3 `News`**
    - `module_06_structural_news` paragraph
@@ -166,15 +185,33 @@ News still carry their own URL bullets (they're evidence dumps, not citations).
 - **Page body:** none.
 - **Quirks:** `raw_research` is injected by `post_parse` from a `<<<RAW_RESEARCH>>> … <<<END_RAW_RESEARCH>>>` delimited block (`tasks/research_pass.py:25`), keeping bulky markdown out of the JSON to avoid string-escape parser failures (Mendix #706, Roblox #557, 2026-05-12). All five canonical-ID fields are nullable; downstream tools fall back to free-text search when null. Guessed URLs are explicitly forbidden.
 
-### `module_01_gate` (v1.2.0)
-- **Purpose:** size + EU/NA gate. Halts pipeline if neither EU nor NA presence.
+### `module_01_gate` (v1.3.0)
+- **Purpose:** size + region gate. Halts pipeline if no operations in EU / UK / Norway / Switzerland / NA.
 - **Tools:** `web_search`.
 - **Model tier:** smart.
+- **Run-once:** yes (`Task.run_once = True`). Skipped on every subsequent run via `_maybe_skip_fresh`'s run-once branch; cached output replayed from `runs.db`.
 - **Inputs:** none.
-- **Output:** `company_name`, `employee_count_estimate`, `operates_in_eu`, `operates_in_na`, `operates_in_eu_or_na`, `regions_present`, `evidence_eu?`, `evidence_na?`, `sources`, `confidence`, `reason_if_out_of_scope?`.
+- **Output:** `company_name`, `employee_count_estimate`, `operates_in_eu`, `operates_in_uk`, `operates_in_norway`, `operates_in_switzerland`, `operates_in_na`, `operates_in_scope`, `regions_present`, `evidence_*?`, `sources`, `confidence`, `reason_if_out_of_scope?`.
 - **Writes to Notion (properties):** `Size` only, bucketed deterministically from `employee_count_estimate` via `size_bucket()` (`tasks/module_01.py:33`).
-- **Page body:** Overview paragraph — `Size band: <bucket> · ~<N> employees · Operations in EU + NA`. On gate failure → `Out of scope: <reason>`.
-- **Quirks:** there is intentionally NO `Employee Count` number property — the integer lives in `output_json` only.
+- **Page body:** Overview paragraph — `Size band: <bucket> · ~<N> employees · Operations in <regions>`. On gate failure → `Out of scope: <reason>`.
+- **Quirks:** there is intentionally NO `Employee Count` number property — the integer lives in `output_json` only. The in-scope buyer-surface count lives in `In-Scope Headcount` (written by M2, not M1).
+
+### `module_02_persona_gate` (v1.1.0)
+- **Purpose:** persona-headcount gate. Halts pipeline when in-scope marketing / creative / brand staff total is below `config.PERSONA_GATE_MIN_HEADCOUNT` (default 5).
+- **Tools:** `apify_linkedin_employees` (`tools/apify_linkedin_employees.py`) — runs deterministic Tavily-based LinkedIn-slug discovery via `tools/linkedin_slug.py`, then paginates LinkedIn employees up to `config.IN_SCOPE_HEADCOUNT_MAX_RESULTS` (default 250) and applies deterministic title + geo filters in tool code. Actor: `harvestapi/linkedin-company-employees` (cookie-free, 2500-per-query cap, $4/1000 + $0.02 start fee; swapped from `apimaestro/...-no-cookies` v6 on 2026-05-17 after repeated LinkedIn rate-limit blocks on Miro). One-line swap via `ACTOR_ID`.
+- **Model tier:** fast (Haiku). The tool does all classification; the LLM only routes the call and echoes the structured payload back as JSON.
+- **Run-once:** yes (`Task.run_once = True`). Once it passes for an account, never re-runs unless the task_run row is manually deleted from `runs.db` OR `--rerun "module_02_persona_gate:<account_substring>"` is passed.
+- **Inputs:** reads `research_pass.linkedin_company_url` from the context envelope as a HINT (the tool's internal slug discovery is the source of truth; the hint is a tertiary fallback when Tavily is unavailable). Falls back to company-name search when both fail.
+- **In-scope persona definition:** title matches any of {marketing, marketer, growth, demand gen, product marketing, campaign, performance marketing, creative, designer, design, art director, video, production, producer, motion, content, brand, communications, comms, social, social media}. Priority order brand > creative > marketing for the per-function breakdown (so "Brand Designer" → brand).
+- **In-scope geo definition:** location matches any of {UK + common cities, Norway, Switzerland + cities, NA = US + Canada + Mexico + common US metros, EU = 27 member states}. UK / Norway / Switzerland are checked before EU (they are not in the EU).
+- **Output:** `total`, `by_function`, `by_geo`, `sample_titles`, `profiles_scanned`, `actor`, `linkedin_url_used`, `truncated_at_cap`, `infra_ok`, `infra_fail_reason?`, plus standard `sources` + `confidence`.
+- **Writes to Notion (properties):** `In-Scope Headcount` (number) — skipped on infra failures so a needs_review run never overwrites a real prior count.
+- **Page body:** `Overview → In-Scope Team` subsection with total paragraph + by-function bullet + by-region bullet + sample-titles bullet (+ truncation warning if pagination capped).
+- **Gate semantics:**
+  - `infra_ok=True AND total >= threshold` → pass.
+  - `infra_ok=True AND total < threshold` → fail; orchestrator marks `out_of_scope`, halts downstream.
+  - `infra_ok=False` (no API key, Apify error) → `gate_passes()` returns True so the account does NOT route to `out_of_scope`. The task emits `confidence="low"`, which the orchestrator's confidence aggregator maps to `needs_review`. Account sits in limbo until a re-run completes the gate cleanly.
+- **Cost:** $0.05–0.15 per account at the 250-result cap, $0.20–0.60 per 1000 results on the candidate Apify actors.
 
 ### `module_03_revenue_model` (v1.2.0)
 - **Purpose:** revenue model + customer segment + primary products as a 2-3 sentence Overview paragraph.

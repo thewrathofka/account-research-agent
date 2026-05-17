@@ -278,7 +278,14 @@ def test_tiktok_falls_back_to_brand_name_without_handle() -> None:
 # ---- Tool __call__ threads canonical URLs through end-to-end ----
 
 @pytest.fixture
-def apify_tool(tmp_path):
+def apify_tool(tmp_path, monkeypatch):
+    # The ApifyAdScraperTool now auto-constructs a real WebSearchTool in
+    # __post_init__ when TAVILY_API_KEY is set, then runs slug discovery
+    # against Tavily live for every LinkedIn call. Clearing the key keeps
+    # the fixture offline + makes the LinkedIn-no-canonical assertion below
+    # exercise the genuine fallback path (no Tavily, hint=None → no URL).
+    import config
+    monkeypatch.setattr(config, "TAVILY_API_KEY", None)
     cache = ToolCallCache(tmp_path / "runs.db")
     client = MagicMock()
     # Mock the actor + dataset chain. Return one item whose advertiser matches

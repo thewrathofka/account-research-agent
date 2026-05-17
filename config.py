@@ -94,6 +94,18 @@ TAVILY_SEARCHES_PER_TASK_CAP = 8
 APIFY_CALLS_PER_TASK_CAP = 3
 MAX_APIFY_RESULTS_PER_PLATFORM = 50
 
+# Module 02 persona-headcount gate. One-time per account. Apply title + geo
+# filters in the tool (no LLM judgment per profile). Actor =
+# automation-lab/linkedin-company-employees-scraper in cookie-free SERP mode,
+# which caps at ~100 employees regardless of this value — so requesting more
+# is wasted money. ~$0.58/account on the FREE Apify tier ($0.005 start +
+# 100 × $0.00575 per employee); drops to ~$0.14-$0.30/account on paid tiers.
+IN_SCOPE_HEADCOUNT_MAX_RESULTS = 100
+# Account fails the persona gate (-> out_of_scope) when in-scope total is below
+# this threshold. "In-scope" = title matches marketing/creative/brand keywords
+# AND location matches NA/EU/UK/Norway/Switzerland.
+PERSONA_GATE_MIN_HEADCOUNT = 5
+
 # Per-task and per-account cost budgets in USD (Fix Appendix #19).
 # Numbers reflect Sonnet-4.5 + Haiku-4.5 pricing observed in v0.3.0 baseline.
 # Eval runner fails if a measured task cost exceeds budget by >20%.

@@ -44,6 +44,7 @@ except ImportError:  # pragma: no cover — only needed for live runs
 import config
 from rate_limit import APIFY_LIMITER
 from run_log import ToolCallCache
+from tools.linkedin_slug import SlugDiscovery, discover_linkedin_company_url
 
 
 # Bumped when the cache payload shape changes OR when an actor's input shape
@@ -61,7 +62,14 @@ from run_log import ToolCallCache
 #     BOOSTER: items whose advertiser-page URL matches the canonical URL
 #     bypass the name-similarity threshold. Catches Oracle (broad ads) AND
 #     filters WIRED (name-collision noise).
-APIFY_TOOL_VERSION = "apify_ad_scraper_v5"
+# v6: LinkedIn canonical URL now comes from deterministic Tavily-based slug
+#     discovery (`tools/linkedin_slug.py`) instead of trusting research_pass's
+#     LLM-picked URL. The model was non-deterministically hallucinating slugs
+#     for ambiguous brands (Miro → /miro/ vs /mirohq/) and the wrong canonical
+#     URL silently disabled the precision booster — Miro ads fell back to
+#     name-fuzzy match only. Bump invalidates any cached LinkedIn payloads
+#     keyed on the bad hint URL.
+APIFY_TOOL_VERSION = "apify_ad_scraper_v6"
 
 # Token-set Jaccard threshold for advertiser-name matching. 0.5 catches
 # "Stripe" vs "Stripe, Inc." but rejects "Stripe" vs "Stripe Investments"
@@ -179,9 +187,20 @@ APIFY_AD_SCRAPER_SCHEMA: dict[str, Any] = {
 
 @dataclass
 class ApifyAdScraperTool:
-    """Apify actor wrapper with cache + per-task hard cap + observed-URL ledger."""
+    """Apify actor wrapper with cache + per-task hard cap + observed-URL ledger.
+
+    For LinkedIn calls, the canonical URL used by the precision booster is
+    overridden by deterministic Tavily-based slug discovery (see
+    `tools/linkedin_slug.discover_linkedin_company_url`). The LLM/research_pass
+    hint URL becomes a tertiary fallback. Sidesteps the slug-hallucination
+    class observed on Miro (Sonnet 4.6 returning the wrong /company/<slug>/
+    non-deterministically on the same prompt).
+    """
     client: Any = None  # ApifyClient — late-bound in __post_init__ when key exists
     cache: ToolCallCache = field(default_factory=ToolCallCache)
+    # Tavily-backed search used by LinkedIn slug discovery. Lazy-constructed
+    # in __post_init__ when not injected so tests can inject a stub.
+    web_search_tool: Any = None
     _count: int = 0
     _cache_hits: int = 0
     _observed_urls: list[str] = field(default_factory=list)
@@ -189,6 +208,9 @@ class ApifyAdScraperTool:
     def __post_init__(self) -> None:
         if self.client is None and config.APIFY_API_KEY and ApifyClient is not None:
             self.client = ApifyClient(token=config.APIFY_API_KEY)
+        if self.web_search_tool is None and config.TAVILY_API_KEY:
+            from tools.web_search import WebSearchTool
+            self.web_search_tool = WebSearchTool(cache=self.cache)
 
     @property
     def name(self) -> str:
@@ -219,6 +241,17 @@ class ApifyAdScraperTool:
             if u and u not in self._observed_urls:
                 self._observed_urls.append(u)
 
+    def _discover_linkedin(self, company: str, hint_url: str | None) -> SlugDiscovery:
+        """Resolve the canonical LinkedIn URL for `company`. Falls back to the
+        hint URL when Tavily is unavailable (e.g. tests don't wire it). See
+        `tools/linkedin_slug.discover_linkedin_company_url` for the scoring."""
+        if self.web_search_tool is None:
+            return SlugDiscovery(
+                url=hint_url, source="hint" if hint_url else "name_fallback",
+                confidence=0.3 if hint_url else 0.0, candidates_scored=[],
+            )
+        return discover_linkedin_company_url(company, hint_url, self.web_search_tool)
+
     def __call__(
         self,
         platform: str,
@@ -248,6 +281,17 @@ class ApifyAdScraperTool:
         max_results = max(1, min(int(max_results), config.MAX_APIFY_RESULTS_PER_PLATFORM))
 
         self._count += 1
+
+        # Slug discovery for LinkedIn — overrides the LLM/research_pass hint.
+        # Runs BEFORE the cache key is computed so a re-keyed run can't
+        # accidentally serve a cached payload that was built from the wrong
+        # hint URL. Discovery is a no-op (returns the hint or None) for the
+        # other platforms; their slug-discovery is a separate follow-up.
+        linkedin_discovery: SlugDiscovery | None = None
+        if platform == "linkedin":
+            linkedin_discovery = self._discover_linkedin(company, linkedin_company_url)
+            linkedin_company_url = linkedin_discovery.url or linkedin_company_url
+
         # Canonical-URL inputs participate in the cache key so a per-platform
         # canonical URL doesn't collide with a free-text run of the same brand
         # (their result sets differ; we don't want the cache to confuse them).
@@ -334,6 +378,7 @@ class ApifyAdScraperTool:
             platform, company, country, filtered_items,
             dropped_count=dropped, used_canonical=used_canonical,
             url_boosted_count=url_boosted,
+            linkedin_discovery=linkedin_discovery,
         )
         self.cache.store(self.name, args, text, ttl_hours=24 * 7)  # 7-day cache
         self._record_urls(_extract_urls(text))
@@ -683,6 +728,7 @@ def _render_results(
     dropped_count: int = 0,
     used_canonical: bool = False,
     url_boosted_count: int = 0,
+    linkedin_discovery: SlugDiscovery | None = None,
 ) -> str:
     """Render an Apify result set as plaintext tool output.
 
@@ -695,8 +741,21 @@ def _render_results(
     - `filtered_out`: items dropped by the post-filter (noise).
     - `url_boosted`: items kept ONLY via canonical-URL match (would have
       failed name-similarity alone). High = canonical URL doing real work.
+    - `linkedin_discovery_source` / `linkedin_discovery_confidence` (v6,
+      LinkedIn only): provenance of the canonical URL used by the post-filter.
+      `tavily_exact` / `tavily_scored` = fresh Tavily lookup overrode any LLM
+      guess. `hint` / `hint_quota_exhausted` = Tavily unavailable, fell back
+      to research_pass's URL. `name_fallback` = no URL available, post-filter
+      used name similarity only.
     """
     match_mode = "free-text+url-boost" if used_canonical else "free-text+name-filter"
+    discovery_lines = ""
+    if linkedin_discovery is not None and platform == "linkedin":
+        discovery_lines = (
+            f"linkedin_discovery_source: {linkedin_discovery.source}\n"
+            f"linkedin_discovery_confidence: {linkedin_discovery.confidence:.2f}\n"
+            f"linkedin_discovery_url: {linkedin_discovery.url or '(none)'}\n"
+        )
     if not items:
         return (
             f"Platform: {platform}\n"
@@ -705,6 +764,7 @@ def _render_results(
             f"match_mode: {match_mode}\n"
             f"filtered_out: {dropped_count}\n"
             f"url_boosted: {url_boosted_count}\n"
+            f"{discovery_lines}"
             f"ads_running: 0\n"
             f"volume: none\n"
             f"format_mix: (none)\n"
@@ -723,6 +783,7 @@ def _render_results(
         f"match_mode: {match_mode}\n"
         f"filtered_out: {dropped_count}\n"
         f"url_boosted: {url_boosted_count}\n"
+        f"{discovery_lines}"
         f"ads_running: {len(items)}\n"
         f"volume: {_bucket_volume(len(items))}\n"
         f"format_mix:\n" + "\n".join(format_lines) + "\n"
