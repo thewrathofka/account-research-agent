@@ -1,4 +1,4 @@
-"""Module 4 — Strategic narrative + pain tags (v2.0.0 redesign 2026-05-11).
+"""Module 3 — Strategic narrative + pain tags (v2.0.0 redesign 2026-05-11).
 
 Synthesis-only task that reads research_pass.raw_research plus three light
 anchors (modules 1, 3, 12) and produces:
@@ -17,7 +17,7 @@ import json
 from typing import Any
 
 import crm
-import prompts.module_04_pain_points as prompt
+import prompts.module_03_pain_points as prompt
 from tasks.base import DetectedEvent, Task, _today_header
 
 
@@ -39,8 +39,8 @@ ANCHOR_MODULES: list[str] = [
 ]
 
 
-class Module04PainPoints(Task):
-    name = "module_04_pain_points"
+class Module03PainPoints(Task):
+    name = "module_03_pain_points"
     section = "Possible Pain Points"
     subsection = None
     prompt_module = prompt
@@ -138,7 +138,7 @@ class Module04PainPoints(Task):
         events: list[DetectedEvent] = []
         for tag, signal_type in _TIMING_PAIN_TAGS.items():
             if tag in curr_tags and tag not in prev_tags:
-                signature = f"module_04:tag:{tag}"
+                signature = f"module_03:tag:{tag}"
                 events.append(DetectedEvent(
                     account_page_id="",
                     module=self.name,

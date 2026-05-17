@@ -11,7 +11,7 @@ from tasks._legacy import CompanyOverview
 from tasks.base import Task, TaskResult
 from tasks.module_01 import Module01Gate
 from tasks.module_02 import Module02RevenueModel
-from tasks.module_04 import Module04PainPoints
+from tasks.module_03 import Module03PainPoints
 from tasks.module_05 import Module05CorporateStructure
 from tasks.module_06 import Module06StructuralNews
 from tasks.module_07 import Module07TriggerEvents
@@ -28,7 +28,7 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "research_pass": ResearchPass,
     "module_01_gate": Module01Gate,
     "module_02_revenue_model": Module02RevenueModel,
-    "module_04_pain_points": Module04PainPoints,
+    "module_03_pain_points": Module03PainPoints,
     "module_05_corporate_structure": Module05CorporateStructure,
     "module_06_structural_news": Module06StructuralNews,
     "module_07_trigger_events": Module07TriggerEvents,
@@ -75,7 +75,7 @@ PHASE2_TASKS = [
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
     "module_14_hiring_signal",
-    "module_04_pain_points",
+    "module_03_pain_points",
 ]
 
 # Tasks that act as gates — if their gate_passes() returns False, downstream
@@ -121,7 +121,7 @@ MONTHLY_TASKS = [
     "research_pass",
     "module_09_creative_reality",
     "module_10_ad_library",
-    "module_04_pain_points",
+    "module_03_pain_points",
 ]
 
 # Quarterly-tier: corporate structure, competitive landscape, revenue model.

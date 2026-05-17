@@ -21,7 +21,7 @@ from orchestrator import Orchestrator
 from providers.base import ProviderResult
 from run_log import RunLog, RunRecord
 from tasks.base import DetectedEvent
-from tasks.module_04 import Module04PainPoints
+from tasks.module_03 import Module03PainPoints
 from tasks.module_05 import Module05CorporateStructure
 from tasks.module_06 import Module06StructuralNews
 from tasks.module_07 import Module07TriggerEvents
@@ -227,7 +227,7 @@ def test_module_05_no_alert_when_unchanged():
 # ---- Module 04 ----
 
 def test_module_04_alerts_on_new_timing_pain_tag():
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     prev = {"tags": ["creative production", "strategy"]}
     curr = {"tags": ["creative production", "post-layoff overflow", "strategy"]}
     events = task.detect_events(prev, curr)
@@ -237,7 +237,7 @@ def test_module_04_alerts_on_new_timing_pain_tag():
 
 
 def test_module_04_no_alert_when_narrative_tag_already_present():
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     prev = {"tags": ["post-layoff overflow", "creative production"]}
     curr = {"tags": ["post-layoff overflow", "strategy"]}
     assert task.detect_events(prev, curr) == []
@@ -245,7 +245,7 @@ def test_module_04_no_alert_when_narrative_tag_already_present():
 
 def test_module_04_no_alert_for_non_timing_tags():
     """Most pain tags are narrative; only the timing-shift ones alert."""
-    task = Module04PainPoints()
+    task = Module03PainPoints()
     prev = {"tags": []}
     curr = {"tags": ["creative production", "audience education", "competitive displacement"]}
     assert task.detect_events(prev, curr) == []
