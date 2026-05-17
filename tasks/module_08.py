@@ -1,4 +1,4 @@
-"""Module 10 — Ad library presence across LinkedIn / Meta / TikTok.
+"""Module 8 — Ad library presence across LinkedIn / Meta / TikTok.
 
 Tool-using task (not synthesis-only). Calls apify_ad_scraper one platform at
 a time so the gating decisions (B2C → Meta? Gen-Z → TikTok?) are visible per
@@ -15,14 +15,14 @@ from __future__ import annotations
 from typing import Any
 
 import crm
-import prompts.module_10_ad_library as prompt
+import prompts.module_08_ad_library as prompt
 from tasks.base import Task, _today_header
 from tools.apify_ad_scraper import ApifyAdScraperTool
 from tools.base import Tool
 
 
-class Module10AdLibrary(Task):
-    name = "module_10_ad_library"
+class Module08AdLibrary(Task):
+    name = "module_08_ad_library"
     section = "Creative Posture"
     subsection = "Ads Running"
     prompt_module = prompt
@@ -38,7 +38,7 @@ class Module10AdLibrary(Task):
         rp = context.get("research_pass") or {}
         research = rp.get("raw_research", "")
         revenue = context.get("module_02_revenue_model") or {}
-        creative = context.get("module_09_creative_reality") or {}
+        creative = context.get("module_07_creative_reality") or {}
 
         prior_lines: list[str] = []
         segment = revenue.get("primary_customer_segment")

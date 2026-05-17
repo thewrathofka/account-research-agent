@@ -15,8 +15,8 @@ from tasks.module_03 import Module03PainPoints
 from tasks.module_04 import Module04CorporateStructure
 from tasks.module_05 import Module05StructuralNews
 from tasks.module_06 import Module06TriggerEvents
-from tasks.module_09 import Module09CreativeReality
-from tasks.module_10 import Module10AdLibrary
+from tasks.module_07 import Module07CreativeReality
+from tasks.module_08 import Module08AdLibrary
 from tasks.module_12 import Module12CompetitorSnapshot
 from tasks.module_13 import Module13IndustryPulse
 from tasks.module_14 import Module14HiringSignal
@@ -32,8 +32,8 @@ TASK_REGISTRY: dict[str, type[Task]] = {
     "module_04_corporate_structure": Module04CorporateStructure,
     "module_05_structural_news": Module05StructuralNews,
     "module_06_trigger_events": Module06TriggerEvents,
-    "module_09_creative_reality": Module09CreativeReality,
-    "module_10_ad_library": Module10AdLibrary,
+    "module_07_creative_reality": Module07CreativeReality,
+    "module_08_ad_library": Module08AdLibrary,
     "module_12_competitor_snapshot": Module12CompetitorSnapshot,
     "module_13_industry_pulse": Module13IndustryPulse,
     "module_14_hiring_signal": Module14HiringSignal,
@@ -52,7 +52,7 @@ PHASE1_TASKS = [
     "module_04_corporate_structure",
     "module_05_structural_news",
     "module_06_trigger_events",
-    "module_09_creative_reality",
+    "module_07_creative_reality",
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
     "module_14_hiring_signal",
@@ -70,8 +70,8 @@ PHASE2_TASKS = [
     "module_04_corporate_structure",
     "module_05_structural_news",
     "module_06_trigger_events",
-    "module_09_creative_reality",
-    "module_10_ad_library",
+    "module_07_creative_reality",
+    "module_08_ad_library",
     "module_12_competitor_snapshot",
     "module_13_industry_pulse",
     "module_14_hiring_signal",
@@ -119,8 +119,8 @@ WEEKLY_TASKS = [
 MONTHLY_TASKS = [
     "module_01_gate",
     "research_pass",
-    "module_09_creative_reality",
-    "module_10_ad_library",
+    "module_07_creative_reality",
+    "module_08_ad_library",
     "module_03_pain_points",
 ]
 

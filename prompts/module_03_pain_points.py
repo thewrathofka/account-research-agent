@@ -23,7 +23,7 @@ Inputs (provided by tasks/module_03.py.build_user_message):
 
 Inputs that are deliberately NOT provided to this module:
 - module_05_structural_news, module_06_trigger_events, module_07_creative_reality,
-  module_10_ad_library, module_14_hiring_signal — those produce mechanical
+  module_08_ad_library, module_14_hiring_signal — those produce mechanical
   signals (layoffs, ad volume, hiring counts). Module 4's job is strategic
   narrative, not signal aggregation. Cross-referencing those is what the per-
   signal subsections under News already do.

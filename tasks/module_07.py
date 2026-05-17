@@ -1,19 +1,19 @@
-"""Module 9 — Creative reality (lite). Output → Creative Posture page section."""
+"""Module 7 — Creative reality (lite). Output → Creative Posture page section."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import crm
-import prompts.module_09_creative_reality as prompt
+import prompts.module_07_creative_reality as prompt
 from tasks.base import Task
 from tools.base import Tool
 from tools.hiring_signals import HiringSignalsTool
 from tools import build_search_tool
 
 
-class Module09CreativeReality(Task):
-    name = "module_09_creative_reality"
+class Module07CreativeReality(Task):
+    name = "module_07_creative_reality"
     section = "Creative Posture"
     subsection = None
     prompt_module = prompt

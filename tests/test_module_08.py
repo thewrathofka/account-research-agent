@@ -8,8 +8,8 @@ import jsonschema
 import pytest
 
 import config
-import prompts.module_10_ad_library as prompt
-from tasks.module_10 import Module10AdLibrary
+import prompts.module_08_ad_library as prompt
+from tasks.module_08 import Module08AdLibrary
 from tools.apify_ad_scraper import (
     ApifyAdScraperTool,
     SUPPORTED_PLATFORMS,
@@ -169,7 +169,7 @@ def test_schema_rejects_two_platforms() -> None:
 
 def test_task_to_fields_writes_nothing() -> None:
     """Module 10 is page-body only (Notion spec §10)."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out: dict[str, Any] = {"platforms": [
         {"platform": "linkedin", "ads_running": 12, "volume": "low",
          "format_mix": [], "note": ""},
@@ -178,7 +178,7 @@ def test_task_to_fields_writes_nothing() -> None:
 
 
 def test_task_to_blocks_emits_bullet_per_platform() -> None:
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "linkedin", "ads_running": 5, "volume": "low",
@@ -269,7 +269,7 @@ def test_schema_still_accepts_platform_without_provenance() -> None:
 
 
 def test_to_blocks_emits_provenance_as_nested_child() -> None:
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "linkedin", "ads_running": 15, "volume": "medium",
@@ -294,7 +294,7 @@ def test_to_blocks_emits_provenance_as_nested_child() -> None:
 
 def test_to_blocks_omits_provenance_when_absent() -> None:
     """Cached pre-v1.3.0 platform output renders without a provenance child."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "linkedin", "ads_running": 5, "volume": "low",
@@ -308,7 +308,7 @@ def test_to_blocks_omits_provenance_when_absent() -> None:
 
 def test_to_blocks_omits_provenance_for_skipped_platforms() -> None:
     """`not applicable` platforms shouldn't get a provenance child even if one is present."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     out = {
         "platforms": [
             {"platform": "meta", "ads_running": 0, "volume": "none",
@@ -322,14 +322,14 @@ def test_to_blocks_omits_provenance_for_skipped_platforms() -> None:
 
 def test_task_section_targets_creative_posture_ads_running() -> None:
     """Page-body assembly relies on these exact strings — guard them with a test."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     assert task.section == "Creative Posture"
     assert task.subsection == "Ads Running"
 
 
 def test_task_to_signal_sections_is_empty() -> None:
     """Module 10 doesn't contribute Buying Signals tags."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     assert task.to_signal_sections({"platforms": []}) == []
 
 

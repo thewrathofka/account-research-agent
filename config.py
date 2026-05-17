@@ -104,11 +104,11 @@ MAX_COST: dict[str, float] = {
     "module_04_corporate_structure": 0.02,
     "module_05_structural_news": 0.02,
     "module_06_trigger_events": 0.03,
-    "module_09_creative_reality": 0.05,
+    "module_07_creative_reality": 0.05,
     "module_12_competitor_snapshot": 0.02,
     "module_13_industry_pulse": 0.02,
     "module_14_hiring_signal": 0.05,
-    "module_10_ad_library": 0.06,  # Phase 2 — token cost; Apify tool cost separate
+    "module_08_ad_library": 0.06,  # Phase 2 — token cost; Apify tool cost separate
     "module_03_pain_points": 0.04,  # Phase 2b — synthesis-only, single LLM call
     "company_overview": 0.04,
     "_account_total": 0.40,  # ceiling per account across all tasks (bumped for modules 4 + 10)

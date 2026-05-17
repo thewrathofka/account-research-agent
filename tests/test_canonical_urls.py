@@ -20,7 +20,7 @@ import pytest
 
 import prompts.research_pass as research_prompt
 from run_log import ToolCallCache
-from tasks.module_10 import Module10AdLibrary
+from tasks.module_08 import Module08AdLibrary
 from tasks.module_14 import Module14HiringSignal
 from tools.apify_ad_scraper import (
     _advertiser_similarity,
@@ -347,7 +347,7 @@ def test_tool_renders_filtered_out_count(tmp_path) -> None:
 # ---- Module 10's build_user_message surfaces canonical URLs ----
 
 def test_module_10_user_message_includes_canonical_urls_when_present() -> None:
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     ctx = {
         "research_pass": {
             "raw_research": "Some research text.",
@@ -365,7 +365,7 @@ def test_module_10_user_message_includes_canonical_urls_when_present() -> None:
 def test_module_10_user_message_surfaces_when_no_canonical_urls() -> None:
     """When research_pass didn't find canonical URLs, the user message must
     explicitly warn the model so it weighs confidence accordingly."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     ctx = {
         "research_pass": {
             "raw_research": "Some research text.",
@@ -382,7 +382,7 @@ def test_module_10_user_message_surfaces_when_no_canonical_urls() -> None:
 def test_module_10_omits_unknown_kwargs() -> None:
     """If only LinkedIn URL is known, the user message names linkedin only —
     not all three. Keeps the prompt focused."""
-    task = Module10AdLibrary()
+    task = Module08AdLibrary()
     ctx = {
         "research_pass": {
             "raw_research": "...",
