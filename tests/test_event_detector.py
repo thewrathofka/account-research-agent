@@ -296,8 +296,8 @@ def _make_orch(rl):
     )
 
 
-def _module_06_result(output: dict[str, Any], prompt_version: str = "v1.5.0"):
-    """Build a synthetic TaskResult for module_06 with a given output."""
+def _module_05_result(output: dict[str, Any], prompt_version: str = "v1.5.0"):
+    """Build a synthetic TaskResult for module_05_structural_news with a given output."""
     from tasks.base import TaskResult
     return TaskResult(
         task_name="module_05_structural_news",
@@ -330,7 +330,7 @@ def test_orchestrator_collects_detected_events_in_outcome(tmp_path):
             "confidence": "high",
         }
     }
-    result = _module_06_result({
+    result = _module_05_result({
         "structure_note": "bankruptcy",
         "event_summary": "Chapter 7 filing",
         "event_date": "2026-05-10",
@@ -360,7 +360,7 @@ def test_orchestrator_skips_diff_on_prompt_version_drift(tmp_path):
             "confidence": "high",
         }
     }
-    result = _module_06_result(
+    result = _module_05_result(
         {"structure_note": "bankruptcy", "confidence": "high", "sources": []},
         prompt_version="v1.5.0",
     )
@@ -376,7 +376,7 @@ def test_orchestrator_first_run_no_events(tmp_path):
     orch = _make_orch(rl)
     account = Account(page_id="p1", name="Acme", rep="Katarina",
                       priority_type="Priority A", last_researched=None)
-    result = _module_06_result({"structure_note": "bankruptcy", "confidence": "high", "sources": []})
+    result = _module_05_result({"structure_note": "bankruptcy", "confidence": "high", "sources": []})
     events = orch._collect_detected_events(
         account, [Module05StructuralNews()], [result], {},
     )

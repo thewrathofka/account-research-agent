@@ -344,8 +344,9 @@ class Task:
         # Inject the canonical Notion account name as ephemeral context for the
         # to_* hooks. Popped before result construction so it never lands in
         # the run log's output_json or in downstream task context envelopes.
-        # Used by module_05 to write the Notion `Parent` property as the
-        # account's own name when structure_type == "parent".
+        # Used by module_04 (corporate structure) to write the Notion
+        # `Parent` property as the account's own name when
+        # structure_type == "parent".
         output["_account_name"] = account_name
         fields = self.to_fields(output)
         page_blocks = self.to_blocks(output)

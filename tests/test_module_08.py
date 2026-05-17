@@ -1,4 +1,4 @@
-"""Tests for module_10 (ad library) — tool + task + prompt schema."""
+"""Tests for module_08 (ad library) — tool + task + prompt schema."""
 
 from __future__ import annotations
 

@@ -228,7 +228,7 @@ def test_research_section_blocks_renders_inline_links_no_footnote_section() -> N
         citations=[{"n": 1, "title": "A1", "url": "https://example.com/a1"}],
     )
     r_b = _make_result(
-        task_name="module_05_corporate_structure", section="Overview",
+        task_name="module_04_corporate_structure", section="Overview",
         page_blocks=[crm_module.paragraph("Structure claim [1].")],
         citations=[{"n": 1, "title": "B1", "url": "https://example.com/b1"}],
     )

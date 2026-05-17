@@ -377,7 +377,7 @@ def test_task_registered_in_phase2_after_dependencies() -> None:
     for anchor in ANCHOR_MODULES:
         assert anchor in PHASE2_TASKS, f"{anchor} missing from PHASE2_TASKS"
         assert PHASE2_TASKS.index(anchor) < pos_04, (
-            f"{anchor} runs AFTER module_04 — context envelope won't have its output"
+            f"{anchor} runs AFTER module_03_pain_points — context envelope won't have its output"
         )
 
 

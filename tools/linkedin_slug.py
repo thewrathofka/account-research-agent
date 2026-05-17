@@ -5,7 +5,8 @@ its broad-research pass. Live evidence in runs.db (2026-05-12 → 2026-05-17) sh
 Sonnet 4.6 non-deterministically hallucinating LinkedIn slugs when web-search
 results are ambiguous — for Miro, three different runs returned `NULL`,
 `/company/miro/` (wrong magazine company), and `/company/mirohq/` (correct).
-M2 and M10 both consume this field and inherit the failure.
+Module 8 (ad library, formerly M10) consumes this field via apify_ad_scraper
+and inherits the failure when the slug is wrong.
 
 This helper replaces the LLM's guess with a deterministic Tavily-based
 discovery step. One search + a deterministic scoring algorithm picks the best

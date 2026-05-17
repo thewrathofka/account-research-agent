@@ -104,7 +104,7 @@ The output has three parts:
 Hard rules for the pain points:
 - DO NOT write in cold-email voice ("I noticed that you..." / "What if you...").
   This is an internal analyst note, not outreach copy.
-- DO NOT cite upstream module names ("module_14 says..."). The BDR doesn't
+- DO NOT cite upstream module names ("module_11 says..."). The BDR doesn't
   care about the agent's plumbing.
 - DO NOT mechanically infer pain from raw signal counts ("they have 24 ads
   therefore production bottleneck"). That's a horoscope. Tie pains to *what

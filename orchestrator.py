@@ -339,7 +339,7 @@ class Orchestrator:
 
         # Rule 1: run-once gates. Skip whenever a prior run produced a real
         # decision — confidence in {"high", "medium"}. Low/failed runs do NOT
-        # count: they indicate the gate couldn't decide (e.g. M2 with Apify
+        # count: they indicate the gate couldn't decide (e.g. an upstream
         # infra failure → confidence='low' so we don't lock the account into
         # needs_review forever; next run gets another chance).
         if task.run_once and prev and prev.get("confidence") in ("high", "medium"):

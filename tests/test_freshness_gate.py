@@ -6,8 +6,8 @@ Covers:
 - Orchestrator injects the prior output into the context envelope when skipping
   (so downstream tasks that read the upstream module still see its data).
 - Orchestrator runs the task when stale OR when no prior row exists.
-- Module 14 (which reads module_06 context) still gets its context when module_06
-  is skipped on freshness.
+- Module 11 (hiring_signal, which reads module_05_structural_news context) still
+  gets its context when module_05 is skipped on freshness.
 """
 
 from __future__ import annotations
